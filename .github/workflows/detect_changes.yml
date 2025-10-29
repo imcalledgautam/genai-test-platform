@@ -23,7 +23,13 @@ jobs:
         run: |
           echo "Detecting changed Python files..."
           git fetch origin main || true
-          git diff --name-only HEAD~1 HEAD > changed_files.txt
+          if [ "$(git rev-list --count HEAD)" -eq 1 ]; then
+            echo "First commit detected. Listing all Python files."
+            find . -name "*.py" > changed_files.txt
+          else
+            git diff --name-only HEAD~1 HEAD > changed_files.txt
+          fi
+          echo "Changed files:"
           cat changed_files.txt
 
       - name: Upload Changed Files Artifact
