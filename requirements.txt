@@ -6,4 +6,8 @@ seaborn
 sqlalchemy
 numpy
 pillow
+requests
+pytest
+pytest-cov
+coverage
 

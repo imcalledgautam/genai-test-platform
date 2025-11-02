@@ -1,6 +1,7 @@
 """
 Simple test utility for the GenAI Test Platform.
 This file demonstrates test generation capabilities.
+Updated for Step 6 POC testing.
 """
 
 def add_numbers(a, b):

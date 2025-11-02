@@ -37,3 +37,33 @@ jobs:
         with:
           name: changed-files
           path: changed_files.txt
+
+      - name: Build context bundle (no LLM yet)
+        run: |
+          python llm_agent/enhanced_context_builder.py
+
+      - name: Upload context bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-bundle
+          path: ci_artifacts/context_bundle.json
+          
+      - name: Create workflow summary
+        run: |
+          echo "## 🤖 GenAI Test Platform - Context Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Analysis Results" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "ci_artifacts/context_bundle.json" ]; then
+            TOTAL_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['total_files'])")
+            CHANGED_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['changed_files'])")
+            echo "- **Total files analyzed:** $TOTAL_FILES" >> $GITHUB_STEP_SUMMARY
+            echo "- **Changed files:** $CHANGED_FILES" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📥 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. Download the \`context-bundle\` artifact from this workflow run" >> $GITHUB_STEP_SUMMARY
+            echo "2. Run locally: \`python workflow_runner.py --skip-download\`" >> $GITHUB_STEP_SUMMARY
+            echo "3. Or use: \`python llm_agent/generate_tests_from_artifacts.py\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Context bundle not generated" >> $GITHUB_STEP_SUMMARY
+          fi
