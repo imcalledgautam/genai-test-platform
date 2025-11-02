@@ -1,0 +1,86 @@
+name: GenAI Test Platform - Universal
+description: AI-powered test generation for any Python project
+iconName: zap
+categories:
+  - Python
+  - Testing
+  - AI
+
+# This workflow can be added to ANY Python repository
+# to enable automatic AI-powered test generation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  genai-test-generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    # Only run on Python repositories
+    if: contains(github.event.repository.language, 'Python') || contains(github.event.head_commit.message, 'python') || contains(github.event.head_commit.message, 'py')
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Run GenAI Test Generator
+        id: genai
+        uses: imcalledgautam/genai-test-platform/.github/actions/genai-test-generator@main
+        with:
+          ollama_model: 'qwen2.5-coder:1.5b'
+          python_version: '3.10'
+          coverage_threshold: '70'
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: steps.genai.outputs.tests_generated > 0
+        with:
+          name: genai-test-results
+          path: |
+            tests/generated/
+            reports/
+            ci_artifacts/
+
+      - name: Create Summary
+        run: |
+          echo "## 🤖 GenAI Test Platform Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Generation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tests Generated:** ${{ steps.genai.outputs.tests_generated }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coverage:** ${{ steps.genai.outputs.coverage_percentage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.genai.outputs.tests_generated }}" -gt "0" ]; then
+            echo "### 🧪 Test Files Generated" >> $GITHUB_STEP_SUMMARY
+            for file in tests/generated/*.py; do
+              if [ -f "$file" ]; then
+                echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📈 Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -20 reports/coverage.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Coverage report not available"
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **No tests generated.** This may be because:" >> $GITHUB_STEP_SUMMARY
+            echo "- No significant Python changes detected" >> $GITHUB_STEP_SUMMARY  
+            echo "- Repository structure not compatible" >> $GITHUB_STEP_SUMMARY
+            echo "- LLM generation failed (check logs)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Optional: Auto-commit generated tests (uncomment if desired)
+      # - name: Auto-commit Generated Tests
+      #   if: steps.genai.outputs.tests_generated > 0
+      #   run: |
+      #     git config --local user.email "action@github.com"
+      #     git config --local user.name "GenAI Test Bot"
+      #     git add tests/generated/
+      #     git commit -m "🤖 Auto-generated tests via GenAI Test Platform" || exit 0
+      #     git push

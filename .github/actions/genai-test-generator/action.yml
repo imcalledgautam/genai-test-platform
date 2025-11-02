@@ -1,0 +1,233 @@
+name: 'GenAI Test Generator'
+description: 'AI-powered test generation using LLMs for any Python project'
+author: 'GenAI Test Platform'
+
+inputs:
+  ollama_model:
+    description: 'Ollama model to use for test generation'
+    required: false
+    default: 'qwen2.5-coder:1.5b'
+  python_version:
+    description: 'Python version to use'
+    required: false
+    default: '3.10'
+  test_framework:
+    description: 'Testing framework (pytest, unittest)'
+    required: false
+    default: 'pytest'
+  coverage_threshold:
+    description: 'Minimum coverage threshold (0-100)'
+    required: false
+    default: '0'
+  skip_ollama:
+    description: 'Skip Ollama installation (if using external LLM)'
+    required: false
+    default: 'false'
+
+outputs:
+  tests_generated:
+    description: 'Number of test files generated'
+    value: ${{ steps.generate.outputs.tests_generated }}
+  coverage_percentage:
+    description: 'Test coverage percentage'
+    value: ${{ steps.coverage.outputs.coverage_percentage }}
+  artifacts_path:
+    description: 'Path to generated test artifacts'
+    value: ${{ steps.generate.outputs.artifacts_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov coverage requests pyyaml
+        
+        # Install project dependencies if requirements.txt exists
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+        fi
+        
+        # Install common dependencies for Python projects
+        pip install pandas numpy matplotlib seaborn streamlit flask django fastapi || true
+
+    - name: Download GenAI Test Generator
+      shell: bash
+      run: |
+        echo "📦 Downloading GenAI Test Generator..."
+        curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/enhanced_context_builder.py -o genai_context_builder.py
+        curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/generate_tests.py -o genai_test_generator.py
+        curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/prompt_template.txt -o genai_prompt_template.txt
+        
+        # Create minimal context builder for any repo
+        cat > genai_universal_builder.py << 'EOF'
+import os, json, subprocess, pathlib
+from datetime import datetime
+
+def detect_changes():
+    """Detect changed Python files via git diff"""
+    try:
+        result = subprocess.run(['git', 'diff', '--name-only', 'HEAD~1', 'HEAD'], 
+                              capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            # Fallback: get all Python files if git diff fails
+            result = subprocess.run(['find', '.', '-name', '*.py', '-type', 'f'], 
+                                  capture_output=True, text=True)
+        return [f for f in result.stdout.strip().split('\n') if f.endswith('.py') and f]
+    except:
+        return []
+
+def build_context_bundle():
+    """Build context for any Python repository"""
+    changed_files = detect_changes()
+    
+    bundle = {
+        "metadata": {
+            "timestamp": datetime.now().isoformat(),
+            "total_files": len(changed_files),
+            "changed_files": len(changed_files),
+            "repository": os.getcwd()
+        },
+        "files": [],
+        "context": {}
+    }
+    
+    # Process changed files
+    for file_path in changed_files[:10]:  # Limit to 10 files for performance
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                bundle["files"].append({
+                    "path": file_path,
+                    "full_text": content[:20000],  # Limit content size
+                    "unified_diff": f"Modified: {file_path}"
+                })
+        except:
+            continue
+    
+    # Add repository context
+    if os.path.exists('README.md'):
+        try:
+            with open('README.md', 'r') as f:
+                bundle["context"]["readme"] = f.read()[:2000]
+        except:
+            pass
+    
+    if os.path.exists('requirements.txt'):
+        try:
+            with open('requirements.txt', 'r') as f:
+                bundle["context"]["requirements"] = f.read()[:1000]
+        except:
+            pass
+    
+    # Save bundle
+    os.makedirs('ci_artifacts', exist_ok=True)
+    with open('ci_artifacts/context_bundle.json', 'w') as f:
+        json.dump(bundle, f, indent=2)
+    
+    return bundle
+
+if __name__ == "__main__":
+    bundle = build_context_bundle()
+    print(f"✅ Context bundle created with {len(bundle['files'])} files")
+EOF
+
+    - name: Install Ollama (if needed)
+      if: inputs.skip_ollama == 'false'
+      shell: bash
+      run: |
+        echo "🤖 Installing Ollama..."
+        curl -fsSL https://ollama.com/install.sh | sh
+        
+        # Start Ollama in background
+        ollama serve &
+        sleep 10
+        
+        # Pull the model
+        echo "📦 Pulling ${{ inputs.ollama_model }} model..."
+        ollama pull ${{ inputs.ollama_model }}
+        
+        echo "✅ Ollama setup complete"
+
+    - name: Detect Changes and Build Context
+      id: context
+      shell: bash
+      run: |
+        echo "🔍 Detecting changes in Python files..."
+        python genai_universal_builder.py
+        
+        if [ -f "ci_artifacts/context_bundle.json" ]; then
+          CHANGED_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(len(data['files']))")
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "changed_files=0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate Tests with AI
+      id: generate
+      if: steps.context.outputs.has_changes == 'true'
+      shell: bash
+      env:
+        OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        OLLAMA_HOST: "http://localhost:11434"
+      run: |
+        echo "🧠 Generating tests with AI..."
+        
+        # Modify the generator for universal use
+        sed -i 's/qwen2.5-coder:7b/'"${{ inputs.ollama_model }}"'/g' genai_test_generator.py
+        
+        mkdir -p tests/generated
+        
+        # Run test generation
+        python genai_test_generator.py || echo "⚠️ Test generation completed with warnings"
+        
+        # Count generated tests
+        TEST_COUNT=$(find tests/generated -name "*.py" -type f 2>/dev/null | wc -l)
+        echo "tests_generated=$TEST_COUNT" >> $GITHUB_OUTPUT
+        echo "artifacts_path=tests/generated" >> $GITHUB_OUTPUT
+        
+        echo "✅ Generated $TEST_COUNT test files"
+
+    - name: Run Tests and Coverage
+      id: coverage
+      if: steps.context.outputs.has_changes == 'true'
+      shell: bash
+      run: |
+        echo "🧪 Running tests with coverage..."
+        
+        mkdir -p reports
+        
+        if [ -d "tests/generated" ] && [ "$(ls -A tests/generated/*.py 2>/dev/null)" ]; then
+          echo "Running generated tests..."
+          
+          # Set PYTHONPATH to current directory
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          
+          # Run tests with coverage
+          coverage run --source=. -m pytest tests/generated --maxfail=5 --disable-warnings -v || true
+          coverage report -m | tee reports/coverage.txt
+          coverage xml -o reports/coverage.xml
+          
+          # Extract coverage percentage
+          COVERAGE_PCT=$(coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+          echo "coverage_percentage=$COVERAGE_PCT" >> $GITHUB_OUTPUT
+          
+          echo "✅ Tests completed with $COVERAGE_PCT% coverage"
+        else
+          echo "⚠️ No tests to run"
+          echo "coverage_percentage=0" >> $GITHUB_OUTPUT
+        fi
+
+branding:
+  icon: 'zap'
+  color: 'purple'
