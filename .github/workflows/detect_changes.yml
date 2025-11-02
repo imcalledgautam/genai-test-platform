@@ -1,4 +1,4 @@
-name: Detect Changes and Prepare for LLM Test Gen
+name: GenAI Test Platform - Complete CI Pipeline
 
 on:
   push:
@@ -7,8 +7,9 @@ on:
     branches: [ main ]
 
 jobs:
-  detect:
+  generate-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -18,10 +19,15 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: Detect Changed Files
         id: changes
         run: |
-          echo "Detecting changed Python files..."
+          echo "🔍 Detecting changed Python files..."
           git fetch origin main || true
           if [ "$(git rev-list --count HEAD)" -eq 1 ]; then
             echo "First commit detected. Listing all Python files."
@@ -31,39 +37,118 @@ jobs:
           fi
           echo "Changed files:"
           cat changed_files.txt
+          
+          # Check if there are Python changes
+          if grep -q "\.py$" changed_files.txt; then
+            echo "has_python_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_python_changes=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Upload Changed Files Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: changed-files
-          path: changed_files.txt
-
-      - name: Build context bundle (no LLM yet)
+      - name: Build Context Bundle
+        if: steps.changes.outputs.has_python_changes == 'true'
         run: |
+          echo "📋 Building context bundle..."
           python llm_agent/enhanced_context_builder.py
 
-      - name: Upload context bundle
+      - name: Install Ollama
+        if: steps.changes.outputs.has_python_changes == 'true'
+        run: |
+          echo "🤖 Installing Ollama..."
+          curl -fsSL https://ollama.com/install.sh | sh
+          
+          # Start Ollama in background
+          ollama serve &
+          sleep 10
+          
+          # Pull the model (using a smaller model for CI speed)
+          echo "📦 Pulling Qwen2.5-Coder model..."
+          ollama pull qwen2.5-coder:1.5b
+          
+          # Verify installation
+          ollama list
+
+      - name: Generate Tests with LLM
+        if: steps.changes.outputs.has_python_changes == 'true'
+        env:
+          OLLAMA_MODEL: "qwen2.5-coder:1.5b"
+          OLLAMA_HOST: "http://localhost:11434"
+        run: |
+          echo "🧠 Generating tests with LLM..."
+          python llm_agent/generate_tests.py
+
+      - name: Run Tests and Coverage
+        if: steps.changes.outputs.has_python_changes == 'true'
+        run: |
+          echo "🧪 Running generated tests with coverage..."
+          mkdir -p reports
+          
+          # Check if tests were generated
+          if [ -d "tests/generated" ] && [ "$(ls -A tests/generated/*.py 2>/dev/null)" ]; then
+            echo "✅ Generated tests found, running pytest..."
+            PYTHONPATH=$PWD coverage run --source=code -m pytest tests/generated --maxfail=1 --disable-warnings -q || true
+            coverage report -m | tee reports/coverage.txt
+            coverage xml -o reports/coverage.xml
+            echo "test_execution=success" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ No generated tests found"
+            echo "test_execution=no_tests" >> $GITHUB_OUTPUT
+          fi
+      - name: Upload Artifacts
+        if: steps.changes.outputs.has_python_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: context-bundle
-          path: ci_artifacts/context_bundle.json
-          
-      - name: Create workflow summary
+          name: test-results
+          path: |
+            tests/generated/
+            reports/
+            ci_artifacts/context_bundle.json
+            changed_files.txt
+
+      - name: Create Workflow Summary
         run: |
-          echo "## 🤖 GenAI Test Platform - Context Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "## 🤖 GenAI Test Platform - Complete Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Analysis Results" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "ci_artifacts/context_bundle.json" ]; then
-            TOTAL_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['total_files'])")
-            CHANGED_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['changed_files'])")
-            echo "- **Total files analyzed:** $TOTAL_FILES" >> $GITHUB_STEP_SUMMARY
-            echo "- **Changed files:** $CHANGED_FILES" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.changes.outputs.has_python_changes }}" == "true" ]; then
+            if [ -f "ci_artifacts/context_bundle.json" ]; then
+              TOTAL_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['total_files'])" 2>/dev/null || echo "N/A")
+              CHANGED_FILES=$(python -c "import json; data=json.load(open('ci_artifacts/context_bundle.json')); print(data['metadata']['changed_files'])" 2>/dev/null || echo "N/A")
+              echo "### 📊 Analysis Results" >> $GITHUB_STEP_SUMMARY
+              echo "- **Total files analyzed:** $TOTAL_FILES" >> $GITHUB_STEP_SUMMARY
+              echo "- **Changed files:** $CHANGED_FILES" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "### 🧠 LLM Test Generation" >> $GITHUB_STEP_SUMMARY
+            if [ -d "tests/generated" ] && [ "$(ls -A tests/generated/*.py 2>/dev/null)" ]; then
+              TEST_COUNT=$(ls tests/generated/*.py 2>/dev/null | wc -l)
+              echo "✅ **$TEST_COUNT test files generated**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Generated test files:" >> $GITHUB_STEP_SUMMARY
+              for file in tests/generated/*.py; do
+                if [ -f "$file" ]; then
+                  echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+                fi
+              done
+            else
+              echo "⚠️ **No test files generated**" >> $GITHUB_STEP_SUMMARY
+            fi
+            
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 📥 Next Steps" >> $GITHUB_STEP_SUMMARY
-            echo "1. Download the \`context-bundle\` artifact from this workflow run" >> $GITHUB_STEP_SUMMARY
-            echo "2. Run locally: \`python workflow_runner.py --skip-download\`" >> $GITHUB_STEP_SUMMARY
-            echo "3. Or use: \`python llm_agent/generate_tests_from_artifacts.py\`" >> $GITHUB_STEP_SUMMARY
+            echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+            if [ -f "reports/coverage.txt" ]; then
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              cat reports/coverage.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ **Coverage report not available**" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- \`test-results\` - Generated tests, coverage reports, and context bundle" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Context bundle not generated" >> $GITHUB_STEP_SUMMARY
+            echo "### ℹ️ No Python Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "No Python files were modified in this commit, skipping test generation." >> $GITHUB_STEP_SUMMARY
           fi

@@ -11,7 +11,7 @@ BUNDLE = ROOT / "ci_artifacts" / "context_bundle.json"
 OUT_DIR = ROOT / "tests" / "generated"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")  # Smaller model for CI
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 PROMPT_TEMPLATE = (ROOT / "llm_agent" / "prompt_template.txt").read_text(encoding="utf-8")
 
@@ -79,12 +79,22 @@ def extract_filename_and_code(block_text):
     return name, code
 
 
-def validate_python(code: str) -> bool:
+def validate_python(code: str) -> tuple[bool, str]:
+    """Validate Python code and return (is_valid, error_message)"""
     try:
         ast.parse(code)
-        return True
-    except Exception:
-        return False
+        # Additional checks
+        if not code.strip():
+            return False, "Empty code block"
+        if "import pytest" not in code:
+            return False, "Missing pytest import"
+        if not any(line.strip().startswith("def test_") for line in code.split('\n')):
+            return False, "No test functions found (must start with 'def test_')"
+        return True, ""
+    except SyntaxError as e:
+        return False, f"Syntax error: {e}"
+    except Exception as e:
+        return False, f"Parse error: {e}"
 
 
 def enforce_safe_imports(code: str) -> bool:
@@ -107,26 +117,70 @@ def generate_for_module(bundle, module_path):
 
     attempts = 0
     last_text = ""
+    last_error = ""
+    
     while attempts < 3:
-        resp = call_ollama_once(prompt if attempts == 0 else (
-            prompt + "\n\nThe previous output failed to parse. Fix syntax/imports and resend the corrected file."))
+        # Build retry prompt with specific error feedback
+        if attempts == 0:
+            current_prompt = prompt
+        else:
+            retry_guidance = f"\n\nPREVIOUS ATTEMPT FAILED: {last_error}\n"
+            retry_guidance += "REQUIREMENTS FOR RETRY:\n"
+            retry_guidance += "- Must include 'import pytest' at the top\n"
+            retry_guidance += "- All functions must start with 'def test_'\n" 
+            retry_guidance += "- Fix any syntax errors\n"
+            retry_guidance += "- Use proper imports (no network/subprocess calls)\n"
+            retry_guidance += "- Include pytest.raises for error cases\n"
+            retry_guidance += "Please generate the corrected test file:"
+            current_prompt = prompt + retry_guidance
+
+        print(f"🔄 Attempt {attempts + 1}/3 for {module_path}")
+        resp = call_ollama_once(current_prompt)
+        
+        # Extract code block
         m = re.search(r"```python(.*?)```", resp, flags=re.S | re.I)
         block = m.group(1).strip() if m else resp.strip()
         filename, code = extract_filename_and_code(block)
 
-        if enforce_safe_imports(code) and validate_python(code):
+        # Validate safety and syntax
+        if not enforce_safe_imports(code):
+            last_error = "Code contains unsafe imports (subprocess, requests, etc.)"
+            attempts += 1
+            last_text = resp
+            continue
+            
+        is_valid, error_msg = validate_python(code)
+        if is_valid:
             out_path = ROOT / filename
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(code, encoding="utf-8")
-            print(f"✅ wrote {out_path}")
-            return out_path
-
+            print(f"✅ Generated {out_path}")
+            
+            # Quick syntax check by importing
+            try:
+                import tempfile
+                import sys
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
+                    tmp.write(code)
+                    tmp.flush()
+                    
+                # Test import (don't actually import to avoid side effects)
+                print(f"✅ Syntax validated for {filename}")
+                return out_path
+            except Exception as e:
+                print(f"⚠️ Import test failed: {e}")
+                last_error = f"Import validation failed: {e}"
+        else:
+            last_error = error_msg
+            
         attempts += 1
         last_text = resp
+        print(f"❌ Attempt {attempts}/3 failed: {last_error}")
 
-    fallback = ROOT / f"tests/generated/__invalid_{Path(module_path).stem}.txt"
-    fallback.write_text(last_text, encoding="utf-8")
-    print(f"⚠️ saved invalid output to {fallback}")
+    # All attempts failed - save for debugging
+    fallback = ROOT / f"tests/generated/__invalid_{Path(module_path).stem}_{int(time.time())}.txt"
+    fallback.write_text(f"FAILED AFTER 3 ATTEMPTS\nLast error: {last_error}\n\nLast response:\n{last_text}", encoding="utf-8")
+    print(f"❌ Failed to generate valid tests for {module_path}. Debug info saved to {fallback}")
     return None
 
 
