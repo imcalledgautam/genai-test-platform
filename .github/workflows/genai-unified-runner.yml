@@ -1,0 +1,205 @@
+name: GenAI Test Platform - Unified Runner
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+    inputs:
+      enable_llm_generation:
+        description: 'Enable LLM test generation'
+        required: false
+        default: 'true'
+        type: boolean
+      stack_override:
+        description: 'Override stack detection (python/node/java)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'python'
+          - 'node'
+          - 'java'
+
+env:
+  GENAI_TEST_GEN: ${{ github.event.inputs.enable_llm_generation || 'true' }}
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  JAVA_VERSION: '17'
+
+jobs:
+  unified-test-runner:
+    name: Unified GenAI Test Runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Need previous commit for diff analysis
+    
+    - name: 🔍 Download GenAI Test Platform Tools
+      run: |
+        echo "📦 Fetching GenAI Test Platform components..."
+        mkdir -p tools schemas genai_artifacts
+        
+        # Download core tools
+        curl -fsSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/genai_test_runner.py -o tools/genai_test_runner.py
+        curl -fsSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/context_builder.py -o tools/context_builder.py
+        curl -fsSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/policy_checker_v3.py -o tools/policy_checker.py
+        
+        # Download schemas
+        curl -fsSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/schemas/test_plan_schema.json -o schemas/test_plan_schema.json
+        curl -fsSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/schemas/test_file_schema.json -o schemas/test_file_schema.json
+        
+        # Make tools executable
+        chmod +x tools/*.py
+        
+        echo "✅ GenAI Test Platform tools downloaded successfully"
+        
+    - name: 🐍 Set up Python Environment
+      if: contains(github.event.head_commit.message, 'python') || hashFiles('requirements.txt', 'pyproject.toml', 'setup.py') != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: 🟢 Set up Node.js Environment  
+      if: contains(github.event.head_commit.message, 'node') || hashFiles('package.json', 'yarn.lock') != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: ☕ Set up Java Environment
+      if: contains(github.event.head_commit.message, 'java') || hashFiles('pom.xml', 'build.gradle', 'build.gradle.kts') != ''
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: 🧪 Run Unified GenAI Test Platform
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/policy_checker.py -o tools/policy_checker.py
+          
+          # LLM components (for AI test generation)
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/enhanced_context_builder.py -o llm_agent/enhanced_context_builder.py
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/generate_tests.py -o llm_agent/generate_tests.py
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/llm_agent/prompt_template.txt -o llm_agent/prompt_template.txt
+          
+          echo "✅ GenAI Test Platform ready"
+
+      - name: Install Ollama (for AI generation)
+        if: env.GENAI_ENABLE != 'false'
+        run: |
+          echo "🤖 Setting up Ollama for AI test generation..."
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 15
+          ollama pull qwen2.5-coder:1.5b
+        continue-on-error: true
+
+      - name: Run Unified GenAI Test Runner
+        env:
+          GENAI_TEST_GEN: ${{ env.GENAI_ENABLE != 'false' && 'true' || 'false' }}
+          OLLAMA_MODEL: "qwen2.5-coder:1.5b"
+          OLLAMA_HOST: "http://localhost:11434"
+        run: |
+          echo "🚀 Running GenAI Test Platform..."
+          python tools/genai_test_runner.py --timeout 1800
+
+      - name: Upload GenAI Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai-test-platform-results
+          path: |
+            genai_artifacts/
+            tests/generated/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Create Execution Summary
+        if: always()
+        run: |
+          echo "# 🤖 GenAI Test Platform - Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "genai_artifacts/test_report.json" ]; then
+            # Extract key metrics from the unified report
+            STACK=$(python -c "import json; print(json.load(open('genai_artifacts/test_report.json')).get('stack', 'unknown'))" 2>/dev/null || echo "unknown")
+            DURATION=$(python -c "import json; print(f\"{json.load(open('genai_artifacts/test_report.json')).get('total_duration_sec', 0):.1f}\")" 2>/dev/null || echo "0")
+            SUCCESS=$(python -c "import json; print(json.load(open('genai_artifacts/test_report.json')).get('success', False))" 2>/dev/null || echo "false")
+            
+            echo "## 📊 Execution Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Technology Stack** | $STACK |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Execution Time** | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Overall Status** | $([ "$SUCCESS" = "true" ] && echo "✅ Success" || echo "❌ Failed") |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Add phase results
+            echo "## 📋 Phase Breakdown" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Dependencies phase
+            DEP_COUNT=$(python -c "
+            import json
+            try:
+                data = json.load(open('genai_artifacts/test_report.json'))
+                deps = next((s for s in data.get('steps', []) if s.get('phase') == 'deps'), {})
+                print(len(deps.get('results', [])))
+            except: print(0)
+            " 2>/dev/null || echo "0")
+            echo "- **Dependencies**: $DEP_COUNT commands executed" >> $GITHUB_STEP_SUMMARY
+            
+            # AI Generation phase
+            AI_ENABLED=$(python -c "
+            import json
+            try:
+                data = json.load(open('genai_artifacts/test_report.json'))
+                genai = next((s for s in data.get('steps', []) if s.get('phase') == 'genai'), {})
+                print(genai.get('result', {}).get('generated', False))
+            except: print('false')
+            " 2>/dev/null || echo "false")
+            echo "- **AI Generation**: $([ "$AI_ENABLED" = "True" ] && echo "🧠 Enabled" || echo "⏭️ Skipped")" >> $GITHUB_STEP_SUMMARY
+            
+            # Test execution phase  
+            TEST_CMD=$(python -c "
+            import json
+            try:
+                data = json.load(open('genai_artifacts/test_report.json'))
+                tests = next((s for s in data.get('steps', []) if s.get('phase') == 'native_tests'), {})
+                print(tests.get('result', {}).get('cmd', 'none'))
+            except: print('none')
+            " 2>/dev/null || echo "none")
+            echo "- **Test Execution**: \`$TEST_CMD\`" >> $GITHUB_STEP_SUMMARY
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Artifacts
+            ARTIFACT_COUNT=$(find genai_artifacts -type f 2>/dev/null | wc -l || echo "0")
+            echo "## 📦 Artifacts Generated" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Artifact Files**: $ARTIFACT_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "- **Test Report**: \`genai_artifacts/test_report.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Summary**: \`genai_artifacts/summary.md\`" >> $GITHUB_STEP_SUMMARY
+            
+            if [ -d "tests/generated" ] && [ "$(ls -A tests/generated 2>/dev/null)" ]; then
+              TEST_FILES=$(find tests/generated -name "*.py" -o -name "*.js" -o -name "*.java" | wc -l)
+              echo "- **Generated Tests**: $TEST_FILES files" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+          else
+            echo "## ⚠️ No Report Generated" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The GenAI Test Platform did not generate a report. Check the logs for errors." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*🤖 Powered by [GenAI Test Platform v2.0](https://github.com/imcalledgautam/genai-test-platform) - One script, all stacks*" >> $GITHUB_STEP_SUMMARY

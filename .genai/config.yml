@@ -1,0 +1,18 @@
+# GenAI Test Platform Configuration
+
+model: "qwen2.5-coder:1.5b"
+auto_approve: false
+timeout: 900
+coverage_threshold: 0
+
+include_patterns:
+  - "**/*.py"
+  - "**/*.js" 
+  - "**/*.ts"
+  - "**/*.java"
+
+exclude_patterns:
+  - "**/test_*"
+  - "**/tests/**"
+  - "**/node_modules/**"
+  - "**/.git/**"

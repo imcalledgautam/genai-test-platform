@@ -1,0 +1,92 @@
+name: GenAI Test Platform - Production Pattern
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  genai-unified-testing:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Download GenAI Test Platform
+        run: |
+          echo "📦 Downloading GenAI Test Platform..."
+          mkdir -p tools
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/genai_test_runner_v2.py -o tools/genai_test_runner.py
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/context_builder_v2.py -o tools/context_builder.py  
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/policy_checker_v2.py -o tools/policy_checker.py
+          chmod +x tools/*.py
+
+      - name: Install Ollama (for AI generation)
+        if: env.GENAI_TEST_GEN != 'false'
+        run: |
+          echo "🤖 Setting up Ollama for AI test generation..."
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 15
+          ollama pull qwen2.5-coder:1.5b
+        continue-on-error: true
+
+      # 🎯 ONE ACTION STEP FOR EVERY REPO
+      - name: Run Unified GenAI Test Runner
+        id: genai_runner
+        run: python tools/genai_test_runner.py
+        env:
+          GENAI_TEST_GEN: ${{ env.GENAI_TEST_GEN || 'true' }}
+        continue-on-error: true
+
+      - name: Upload GenAI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai-artifacts
+          path: genai_artifacts/**
+          if-no-files-found: warn
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## 🤖 GenAI Test Platform Results" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "genai_artifacts/test_report.json" ]; then
+            stack=$(jq -r '.stack' genai_artifacts/test_report.json)
+            echo "**Stack detected**: $stack" >> $GITHUB_STEP_SUMMARY
+            
+            # Test results
+            test_result=$(jq -r '.steps[] | select(.phase=="native_tests") | .result.rc' genai_artifacts/test_report.json)
+            if [ "$test_result" = "0" ]; then
+              echo "✅ **Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+            else  
+              echo "❌ **Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Artifacts
+            artifact_count=$(jq -r '.artifacts | length' genai_artifacts/test_report.json)
+            echo "📁 **Artifacts**: $artifact_count files collected" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No test report generated" >> $GITHUB_STEP_SUMMARY  
+          fi

@@ -1,0 +1,59 @@
+name: GenAI Test Generation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'Files to test (comma-separated)'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve tests'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  genai-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 10
+          ollama pull qwen2.5-coder:1.5b
+          
+      - name: Setup GenAI Platform
+        run: |
+          git clone https://github.com/imcalledgautam/genai-test-platform.git /tmp/genai
+          cp -r /tmp/genai/tools ./genai-tools
+          cp -r /tmp/genai/llm_agent ./genai-tools/
+          cd genai-tools && pip install -r ../requirements.txt || pip install pytest requests pathlib2
+          
+      - name: Generate and Run Tests
+        run: |
+          export PYTHONPATH="./genai-tools:$PYTHONPATH"
+          cd genai-tools
+          python tools/unified_test_runner.py ${GITHUB_EVENT_INPUTS_FILES:+--files $GITHUB_EVENT_INPUTS_FILES} ${GITHUB_EVENT_INPUTS_AUTO_APPROVE:+--auto-approve}
+          
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            tests/
+            genai_artifacts/
+            coverage.xml
+            test-results.xml
