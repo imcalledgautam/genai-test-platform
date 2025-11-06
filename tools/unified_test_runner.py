@@ -316,7 +316,7 @@ Output only Python code, no explanations or markdown:"""
                             "num_ctx": 2048  # Optimized context for 1.5B model
                         }
                     },
-                    timeout=20  # Much shorter timeout for fast model
+                    timeout=120  # Increased timeout for GitHub Actions environment
                 )
                 
                 if response.status_code == 200:
