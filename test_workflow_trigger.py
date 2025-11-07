@@ -8,7 +8,8 @@ is working correctly after the major refactor.
 
 def test_workflow_trigger():
     """Simple function to test workflow triggering"""
-    print("🚀 GitHub Actions workflow trigger test")
+    print("🚀 GitHub Actions workflow trigger test - Updated")
+    print("✅ Testing if workflows run after workflow fixes")
     return "workflow_test_successful"
 
 if __name__ == "__main__":
