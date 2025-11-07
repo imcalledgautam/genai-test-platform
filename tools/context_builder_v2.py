@@ -133,7 +133,26 @@ def extract_python_surface() -> List[Dict[str, Any]]:
                 
     except Exception as e:
         print(f"Warning: Failed to extract Python surface: {e}")
-        
+    
+    # Sort symbols to prioritize main source files over utility files
+    def get_priority(symbol):
+        file_path = symbol["file"]
+        # Priority 1: Main files (main.py, app.py, server.py, etc.)
+        if any(main_name in file_path.lower() for main_name in ['main.py', 'app.py', 'server.py', 'index.py']):
+            return 1
+        # Priority 2: Source directories (src/, lib/, app/)
+        if any(src_dir in file_path for src_dir in ['src/', 'lib/', 'app/', 'core/']):
+            return 2
+        # Priority 3: Root level files
+        if '/' not in file_path:
+            return 3
+        # Priority 4: Utility files (utils/, tools/, helpers/)
+        if any(util_dir in file_path for util_dir in ['utils/', 'tools/', 'helpers/', 'config/']):
+            return 4
+        # Priority 5: Everything else
+        return 5
+    
+    surface.sort(key=get_priority)
     return surface
 
 def extract_public_surface() -> Dict[str, List[Dict[str, Any]]]:

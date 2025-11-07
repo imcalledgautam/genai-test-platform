@@ -269,20 +269,12 @@ def generate_tests_for_symbols(symbols: List[Dict]) -> int:
         # Group symbols by file for more efficient generation
         files_to_test = {}
         
-        # Filter symbols to focus on source files (not tools/)
-        filtered_symbols = []
-        for symbol in symbols:
-            file_path = symbol["file"]
-            # Skip our own tools directory files to focus on target repository
-            if not file_path.startswith("tools/") and not file_path.startswith("llm_agent/"):
-                filtered_symbols.append(symbol)
-        
-        # Process filtered symbols (limit to 10 for reasonable GitHub Actions execution time)
-        process_count = min(len(filtered_symbols), 10)
-        print(f":: Found {len(symbols)} total symbols, {len(filtered_symbols)} after filtering")
+        # Process symbols (limit to 15 for reasonable GitHub Actions execution time)
+        process_count = min(len(symbols), 15)
+        print(f":: Found {len(symbols)} total symbols")
         print(f":: Processing {process_count} symbols from files:")
         
-        for symbol in filtered_symbols[:process_count]:
+        for symbol in symbols[:process_count]:
             file_path = symbol["file"]
             print(f"   - {file_path}: {symbol['name']} ({symbol['type']})")
             if file_path not in files_to_test:
