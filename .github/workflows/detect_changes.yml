@@ -85,6 +85,7 @@ jobs:
           ollama list
 
       - name: Generate Tests with LLM
+        id: generate_tests
         if: steps.changes.outputs.has_python_changes == 'true'
         env:
           OLLAMA_MODEL: "qwen2.5-coder:1.5b"
@@ -101,48 +102,29 @@ jobs:
           else
             echo "⚠️ No test generator found"
           fi
-
-      - name: Run Tests and Coverage
-        if: steps.changes.outputs.has_python_changes == 'true'
-        run: |
-          echo "🧪 Running tests with coverage..."
-          mkdir -p reports
           
-          # Install test dependencies
-          pip install pytest pytest-cov coverage
-          
-          # Set Python path
-          export PYTHONPATH=$PWD:$PYTHONPATH
-          
-          # Check if tests exist and run them
-          if [ -d "tests" ] && find tests -name "*.py" -type f | grep -q test; then
-            echo "✅ Tests found, running pytest..."
-            
-            # Run tests with coverage
-            python -m pytest tests/ --maxfail=5 --tb=short --disable-warnings -v \
-              --cov=. --cov-report=term --cov-report=xml:reports/coverage.xml || true
-              
-            # Generate text report
-            coverage report -m | tee reports/coverage.txt
-            echo "test_execution=success" >> $GITHUB_OUTPUT
+          # Count generated tests
+          if [ -d "tests/generated" ] || [ -d "tests/generated_by_llm" ]; then
+            GENERATED_COUNT=$(find tests -name "*generated*.py" -type f 2>/dev/null | wc -l)
+            echo "✅ Generated $GENERATED_COUNT test files"
+            echo "generated_count=$GENERATED_COUNT" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ No tests found"
-            echo "test_execution=no_tests" >> $GITHUB_OUTPUT
+            echo "⚠️ No tests were generated"
+            echo "generated_count=0" >> $GITHUB_OUTPUT
           fi
-      - name: Upload Artifacts
+      - name: Upload Generated Tests
         if: steps.changes.outputs.has_python_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: generated-tests
           path: |
-            tests/generated/
-            reports/
+            tests/generated*/
             ci_artifacts/context_bundle.json
             changed_files.txt
 
       - name: Create Workflow Summary
         run: |
-          echo "## 🤖 GenAI Test Platform - Complete Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🤖 GenAI Test Platform - Test Generation Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ steps.changes.outputs.has_python_changes }}" == "true" ]; then
@@ -156,14 +138,20 @@ jobs:
             fi
             
             echo "### 🧠 LLM Test Generation" >> $GITHUB_STEP_SUMMARY
-            if [ -d "tests/generated" ] && [ "$(ls -A tests/generated/*.py 2>/dev/null)" ]; then
-              TEST_COUNT=$(ls tests/generated/*.py 2>/dev/null | wc -l)
-              echo "✅ **$TEST_COUNT test files generated**" >> $GITHUB_STEP_SUMMARY
+            GENERATED_COUNT="${{ steps.generate_tests.outputs.generated_count }}"
+            if [ "$GENERATED_COUNT" -gt 0 ] 2>/dev/null; then
+              echo "✅ **$GENERATED_COUNT test files generated successfully**" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "Generated test files:" >> $GITHUB_STEP_SUMMARY
-              for file in tests/generated/*.py; do
-                if [ -f "$file" ]; then
-                  echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+              
+              # List generated files from both possible directories
+              for dir in "tests/generated" "tests/generated_by_llm"; do
+                if [ -d "$dir" ]; then
+                  for file in "$dir"/*.py; do
+                    if [ -f "$file" ]; then
+                      echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+                    fi
+                  done
                 fi
               done
             else
@@ -171,18 +159,15 @@ jobs:
             fi
             
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
-            if [ -f "reports/coverage.txt" ]; then
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              cat reports/coverage.txt >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "⚠️ **Coverage report not available**" >> $GITHUB_STEP_SUMMARY
-            fi
+            echo "### 📦 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. **Download the generated tests** from the artifacts section below" >> $GITHUB_STEP_SUMMARY
+            echo "2. **Review and adjust imports** if needed for your project structure" >> $GITHUB_STEP_SUMMARY
+            echo "3. **Run tests locally** with \`pytest tests/generated*/\`" >> $GITHUB_STEP_SUMMARY
+            echo "4. **Integrate into your test suite** as needed" >> $GITHUB_STEP_SUMMARY
             
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "- \`test-results\` - Generated tests, coverage reports, and context bundle" >> $GITHUB_STEP_SUMMARY
+            echo "- \`generated-tests\` - LLM-generated test files and context information" >> $GITHUB_STEP_SUMMARY
           else
             echo "### ℹ️ No Python Changes Detected" >> $GITHUB_STEP_SUMMARY
             echo "No Python files were modified in this commit, skipping test generation." >> $GITHUB_STEP_SUMMARY

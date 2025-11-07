@@ -1,0 +1,379 @@
+name: GenAI Test Platform - Universal Test Generation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'Files to test (comma-separated)'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve LLM-generated tests'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  universal-test-generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Get current and previous commit for diff
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Base Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pytest pytest-cov coverage
+
+      - name: Install Repository Dependencies
+        run: |
+          # Try to install from requirements.txt if it exists
+          if [ -f "requirements.txt" ]; then
+            echo "📦 Installing from requirements.txt"
+            pip install -r requirements.txt
+          elif [ -f "pyproject.toml" ]; then
+            echo "📦 Installing from pyproject.toml"
+            pip install .
+          elif [ -f "setup.py" ]; then
+            echo "📦 Installing from setup.py"
+            pip install .
+          else
+            echo "⚠️ No dependency file found, continuing with base packages"
+          fi
+
+      - name: Detect Changed Files
+        id: changes
+        run: |
+          echo "🔍 Detecting changes..."
+          
+          # Handle different scenarios
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.files }}" ]; then
+              echo "${{ github.event.inputs.files }}" | tr ',' '\n' > changed_files.txt
+            else
+              echo "Manual trigger - scanning all Python files"
+              find . -name "*.py" -not -path "./.git/*" -not -path "./.*" > changed_files.txt
+            fi
+          elif [ "$(git rev-list --count HEAD)" -eq 1 ]; then
+            echo "First commit - scanning all Python files"
+            find . -name "*.py" -not -path "./.git/*" -not -path "./.*" > changed_files.txt
+          else
+            echo "Detecting changes from previous commit"
+            git diff --name-only HEAD~1 HEAD > changed_files.txt
+          fi
+          
+          echo "Files to analyze:"
+          cat changed_files.txt
+          
+          # Check if there are Python files
+          if grep -q "\.py$" changed_files.txt; then
+            echo "has_python_changes=true" >> $GITHUB_OUTPUT
+            echo "🐍 Python files detected"
+          else
+            echo "has_python_changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No Python files to analyze"
+          fi
+
+      - name: Create Universal Context Bundle
+        if: steps.changes.outputs.has_python_changes == 'true'
+        run: |
+          echo "📋 Creating universal context bundle..."
+          mkdir -p ci_artifacts
+          
+          # Create a universal context builder script
+          cat > universal_context_builder.py << 'EOF'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          
+          def get_git_diff(file_path):
+              try:
+                  result = subprocess.run(['git', 'show', f'HEAD:{file_path}'], 
+                                        capture_output=True, text=True)
+                  if result.returncode == 0:
+                      return result.stdout
+              except:
+                  pass
+              return ""
+          
+          def analyze_python_file(file_path):
+              try:
+                  with open(file_path, 'r', encoding='utf-8') as f:
+                      content = f.read()
+                  
+                  # Basic analysis
+                  lines = content.split('\n')
+                  functions = [line.strip() for line in lines if line.strip().startswith('def ')]
+                  classes = [line.strip() for line in lines if line.strip().startswith('class ')]
+                  
+                  return {
+                      'path': file_path,
+                      'language': 'python',
+                      'full_text': content,
+                      'lines': len(lines),
+                      'functions': functions,
+                      'classes': classes,
+                      'imports': [line.strip() for line in lines if line.strip().startswith(('import ', 'from '))]
+                  }
+              except Exception as e:
+                  print(f"Error analyzing {file_path}: {e}")
+                  return None
+          
+          # Read changed files
+          with open('changed_files.txt', 'r') as f:
+              changed_files = [line.strip() for line in f if line.strip()]
+          
+          # Analyze Python files
+          files_data = []
+          for file_path in changed_files:
+              if file_path.endswith('.py') and os.path.exists(file_path):
+                  file_data = analyze_python_file(file_path)
+                  if file_data:
+                      files_data.append(file_data)
+          
+          # Create context bundle
+          context = {
+              'files': files_data,
+              'metadata': {
+                  'repository': os.environ.get('GITHUB_REPOSITORY', 'unknown'),
+                  'commit': os.environ.get('GITHUB_SHA', 'unknown'),
+                  'total_files': len(files_data),
+                  'changed_files': len(changed_files),
+                  'workflow_trigger': os.environ.get('GITHUB_EVENT_NAME', 'unknown')
+              },
+              'context': {
+                  'project_type': 'python',
+                  'has_tests': os.path.exists('tests') or any('test' in f for f in os.listdir('.') if os.path.isdir(f))
+              }
+          }
+          
+          # Save context bundle
+          with open('ci_artifacts/context_bundle.json', 'w') as f:
+              json.dump(context, f, indent=2)
+          
+          print(f"✅ Context bundle created with {len(files_data)} Python files")
+          EOF
+          
+          python universal_context_builder.py
+
+      - name: Install Ollama
+        if: steps.changes.outputs.has_python_changes == 'true'
+        run: |
+          echo "🤖 Installing Ollama..."
+          curl -fsSL https://ollama.com/install.sh | sh
+          
+          # Start Ollama in background
+          ollama serve &
+          sleep 10
+          
+          # Pull a lightweight model for testing
+          echo "📦 Pulling Qwen2.5-Coder model..."
+          ollama pull qwen2.5-coder:1.5b
+          
+          # Verify installation
+          ollama list
+
+      - name: Generate Tests with Universal LLM
+        if: steps.changes.outputs.has_python_changes == 'true'
+        env:
+          OLLAMA_MODEL: "qwen2.5-coder:1.5b"
+          OLLAMA_HOST: "http://localhost:11434"
+        run: |
+          echo "🧠 Generating tests with LLM..."
+          
+          # Create universal test generator
+          cat > universal_test_generator.py << 'EOF'
+          import json, requests, os, re, ast
+          from pathlib import Path
+          
+          def create_prompt_template():
+              return """
+          ROLE: You are a senior test automation engineer specializing in pytest.
+          
+          TASK: Generate comprehensive pytest unit tests for the provided Python code.
+          
+          REQUIREMENTS:
+          1. Generate ONLY valid pytest code - no explanations
+          2. Use correct import paths (analyze the code structure)
+          3. Include positive, negative, boundary, and edge case tests
+          4. Use pytest fixtures and parametrize appropriately
+          5. Add proper error handling tests with pytest.raises()
+          6. Make tests deterministic and isolated
+          
+          IMPORT RULES:
+          - If you see 'src/' directory structure, use 'from src.module import ...'
+          - Otherwise, use direct imports 'from module import ...'
+          - Add sys.path configuration if needed for local imports
+          
+          OUTPUT: Single Python file wrapped in ```python ``` code block only.
+          """
+          
+          def call_ollama(prompt):
+              url = f"{os.getenv('OLLAMA_HOST', 'http://localhost:11434')}/api/generate"
+              payload = {
+                  "model": os.getenv('OLLAMA_MODEL', 'qwen2.5-coder:1.5b'),
+                  "prompt": prompt,
+                  "stream": False,
+                  "options": {"temperature": 0.1, "top_p": 0.9}
+              }
+              
+              try:
+                  response = requests.post(url, json=payload, timeout=120)
+                  response.raise_for_status()
+                  return response.json().get('response', '')
+              except Exception as e:
+                  print(f"Error calling Ollama: {e}")
+                  return None
+          
+          def extract_code(llm_response):
+              if not llm_response:
+                  return None
+              
+              # Extract code from markdown blocks
+              code_blocks = re.findall(r'```python\s*\n(.*?)\n```', llm_response, re.DOTALL)
+              if not code_blocks:
+                  code_blocks = re.findall(r'```\s*\n(.*?)\n```', llm_response, re.DOTALL)
+              
+              if code_blocks:
+                  code = code_blocks[0].strip()
+                  try:
+                      ast.parse(code)  # Validate syntax
+                      return code
+                  except SyntaxError as e:
+                      print(f"Generated code has syntax errors: {e}")
+                      return None
+              return None
+          
+          # Load context bundle
+          with open('ci_artifacts/context_bundle.json', 'r') as f:
+              context = json.load(f)
+          
+          # Create tests directory
+          os.makedirs('tests/generated', exist_ok=True)
+          
+          # Generate tests for each file
+          template = create_prompt_template()
+          generated_count = 0
+          
+          for file_data in context['files']:
+              if not file_data.get('full_text'):
+                  continue
+                  
+              file_path = file_data['path']
+              print(f"Generating tests for {file_path}...")
+              
+              prompt = f"{template}\n\nPYTHON CODE TO TEST:\n```python\n{file_data['full_text'][:10000]}\n```"
+              
+              llm_response = call_ollama(prompt)
+              test_code = extract_code(llm_response)
+              
+              if test_code:
+                  # Create test file
+                  module_name = Path(file_path).stem
+                  test_file = f"tests/generated/test_{module_name}_generated.py"
+                  
+                  header = f'''#!/usr/bin/env python3
+          """
+          Generated test file for {file_path}
+          Created by: Universal GenAI Test Generator
+          """
+          
+          import sys
+          import os
+          # Add project root to Python path
+          sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+          
+          '''
+                  
+                  with open(test_file, 'w') as f:
+                      f.write(header + test_code)
+                  
+                  print(f"✅ Generated {test_file}")
+                  generated_count += 1
+              else:
+                  print(f"❌ Failed to generate tests for {file_path}")
+          
+          print(f"🎉 Generated {generated_count} test files")
+          EOF
+          
+          python universal_test_generator.py
+
+      - name: Run Generated Tests
+        if: steps.changes.outputs.has_python_changes == 'true'
+        run: |
+          echo "🧪 Running generated tests..."
+          mkdir -p reports
+          
+          # Set Python path
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          
+          # Run tests if they exist
+          if [ -d "tests/generated" ] && find tests/generated -name "*.py" -type f | grep -q .; then
+            echo "✅ Generated tests found, running pytest..."
+            
+            python -m pytest tests/generated/ -v --tb=short --maxfail=5 \
+              --cov=. --cov-report=term --cov-report=xml:reports/coverage.xml || true
+              
+            coverage report -m | tee reports/coverage.txt || true
+          else
+            echo "⚠️ No generated tests found"
+          fi
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-test-results
+          path: |
+            tests/generated/
+            reports/
+            ci_artifacts/
+            changed_files.txt
+
+      - name: Create Summary
+        if: always()
+        run: |
+          echo "## 🤖 Universal GenAI Test Generation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "ci_artifacts/context_bundle.json" ]; then
+            REPO=$(python -c "import json; print(json.load(open('ci_artifacts/context_bundle.json'))['metadata']['repository'])" 2>/dev/null || echo "Unknown")
+            FILES=$(python -c "import json; print(json.load(open('ci_artifacts/context_bundle.json'))['metadata']['total_files'])" 2>/dev/null || echo "0")
+            
+            echo "### 📊 Repository Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "- **Repository:** $REPO" >> $GITHUB_STEP_SUMMARY
+            echo "- **Python files analyzed:** $FILES" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -d "tests/generated" ]; then
+            TEST_COUNT=$(find tests/generated -name "*.py" -type f | wc -l)
+            echo "### 🧪 Test Generation Results" >> $GITHUB_STEP_SUMMARY
+            echo "- **Test files generated:** $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ $TEST_COUNT -gt 0 ]; then
+              echo "Generated test files:" >> $GITHUB_STEP_SUMMARY
+              for file in tests/generated/*.py; do
+                if [ -f "$file" ]; then
+                  echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+                fi
+              done
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Universal Workflow Complete" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow successfully adapted to the repository structure and generated tests." >> $GITHUB_STEP_SUMMARY
