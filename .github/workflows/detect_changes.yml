@@ -49,7 +49,23 @@ jobs:
         if: steps.changes.outputs.has_python_changes == 'true'
         run: |
           echo "📋 Building context bundle..."
-          python llm_agent/enhanced_context_builder.py
+          # Create ci_artifacts directory
+          mkdir -p ci_artifacts
+          
+          # Try different context builders in order of preference
+          if [ -f "tools/context_builder_v2.py" ]; then
+            echo "Using tools/context_builder_v2.py"
+            python tools/context_builder_v2.py
+          elif [ -f "llm_agent/enhanced_context_builder.py" ]; then
+            echo "Using llm_agent/enhanced_context_builder.py"
+            python llm_agent/enhanced_context_builder.py
+          elif [ -f "llm_agent/context_builder.py" ]; then
+            echo "Using llm_agent/context_builder.py"
+            python llm_agent/context_builder.py
+          else
+            echo "⚠️ No context builder found, creating minimal bundle"
+            echo '{"files":[],"metadata":{"total_files":0,"changed_files":0}}' > ci_artifacts/context_bundle.json
+          fi
 
       - name: Install Ollama
         if: steps.changes.outputs.has_python_changes == 'true'
@@ -75,23 +91,42 @@ jobs:
           OLLAMA_HOST: "http://localhost:11434"
         run: |
           echo "🧠 Generating tests with LLM..."
-          python llm_agent/generate_tests.py
+          # Try enhanced test generator first, fallback to original
+          if [ -f "tools/enhanced_test_generator.py" ]; then
+            echo "Using enhanced test generator"
+            python tools/enhanced_test_generator.py
+          elif [ -f "llm_agent/generate_tests.py" ]; then
+            echo "Using original test generator"
+            python llm_agent/generate_tests.py
+          else
+            echo "⚠️ No test generator found"
+          fi
 
       - name: Run Tests and Coverage
         if: steps.changes.outputs.has_python_changes == 'true'
         run: |
-          echo "🧪 Running generated tests with coverage..."
+          echo "🧪 Running tests with coverage..."
           mkdir -p reports
           
-          # Check if tests were generated
-          if [ -d "tests/generated" ] && [ "$(ls -A tests/generated/*.py 2>/dev/null)" ]; then
-            echo "✅ Generated tests found, running pytest..."
-            PYTHONPATH=$PWD coverage run --source=code -m pytest tests/generated --maxfail=1 --disable-warnings -q || true
+          # Install test dependencies
+          pip install pytest pytest-cov coverage
+          
+          # Set Python path
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          
+          # Check if tests exist and run them
+          if [ -d "tests" ] && find tests -name "*.py" -type f | grep -q test; then
+            echo "✅ Tests found, running pytest..."
+            
+            # Run tests with coverage
+            python -m pytest tests/ --maxfail=5 --tb=short --disable-warnings -v \
+              --cov=. --cov-report=term --cov-report=xml:reports/coverage.xml || true
+              
+            # Generate text report
             coverage report -m | tee reports/coverage.txt
-            coverage xml -o reports/coverage.xml
             echo "test_execution=success" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ No generated tests found"
+            echo "⚠️ No tests found"
             echo "test_execution=no_tests" >> $GITHUB_OUTPUT
           fi
       - name: Upload Artifacts
