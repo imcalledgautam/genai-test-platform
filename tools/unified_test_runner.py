@@ -268,8 +268,23 @@ def generate_tests_for_symbols(symbols: List[Dict]) -> int:
         
         # Group symbols by file for more efficient generation
         files_to_test = {}
-        for symbol in symbols[:3]:  # Limit to first 3 for faster demo
+        
+        # Filter symbols to focus on source files (not tools/)
+        filtered_symbols = []
+        for symbol in symbols:
             file_path = symbol["file"]
+            # Skip our own tools directory files to focus on target repository
+            if not file_path.startswith("tools/") and not file_path.startswith("llm_agent/"):
+                filtered_symbols.append(symbol)
+        
+        # Process filtered symbols (limit to 10 for reasonable GitHub Actions execution time)
+        process_count = min(len(filtered_symbols), 10)
+        print(f":: Found {len(symbols)} total symbols, {len(filtered_symbols)} after filtering")
+        print(f":: Processing {process_count} symbols from files:")
+        
+        for symbol in filtered_symbols[:process_count]:
+            file_path = symbol["file"]
+            print(f"   - {file_path}: {symbol['name']} ({symbol['type']})")
             if file_path not in files_to_test:
                 files_to_test[file_path] = []
             files_to_test[file_path].append(symbol)
@@ -436,11 +451,24 @@ def collect_reports(stack: str) -> List[str]:
         full_path = ROOT / file_path
         if full_path.exists():
             files.append(str(full_path))
+
+    # Also collect generated test files
+    generated_tests_dir = ROOT / "tests" / "generated_by_llm"
+    if generated_tests_dir.exists():
+        for test_file in generated_tests_dir.glob("*.py"):
+            files.append(str(test_file))
     
+    # Also collect the test plan and report
+    genai_artifacts = ROOT / "genai_artifacts"
+    if genai_artifacts.exists():
+        for artifact in genai_artifacts.glob("*"):
+            if artifact.is_file():
+                files.append(str(artifact))
+
     # Save manifest
     manifest_path = ARTIFACTS / "collected_files_manifest.txt"
     manifest_path.write_text("\n".join(files))
-    
+
     return files
 
 def main():

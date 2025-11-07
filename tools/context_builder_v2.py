@@ -97,8 +97,8 @@ def extract_python_surface() -> List[Dict[str, Any]]:
             
             files_processed += 1
             # Limit processing to avoid infinite loops with large repositories
-            if files_processed > 50:
-                print(f":: Limiting to 50 files for performance")
+            if files_processed > 100:
+                print(f":: Limiting to 100 files for performance")
                 break
                 
             try:
