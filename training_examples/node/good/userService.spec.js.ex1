@@ -1,0 +1,104 @@
+// Good Example: Jest test with proper structure and mocking
+const { jest } = require('@jest/globals');
+const UserService = require('../src/UserService');
+const Database = require('../src/Database');
+
+// Mock external dependencies
+jest.mock('../src/Database');
+
+describe('UserService', () => {
+  let userService;
+  let mockDatabase;
+  
+  beforeEach(() => {
+    // Arrange: Fresh mocks for each test
+    mockDatabase = new Database();
+    userService = new UserService(mockDatabase);
+    jest.clearAllMocks();
+  });
+  
+  describe('createUser', () => {
+    test('should create user with valid data', async () => {
+      // Arrange
+      const userData = {
+        name: 'John Doe',
+        email: 'john@example.com',
+        age: 25
+      };
+      const expectedUserId = 'user_123';
+      mockDatabase.save.mockResolvedValue({ id: expectedUserId });
+      
+      // Act
+      const result = await userService.createUser(userData);
+      
+      // Assert
+      expect(result).toEqual({ id: expectedUserId });
+      expect(mockDatabase.save).toHaveBeenCalledWith(userData);
+      expect(mockDatabase.save).toHaveBeenCalledTimes(1);
+    });
+    
+    test('should reject invalid email format', async () => {
+      // Arrange
+      const invalidUserData = {
+        name: 'John Doe',
+        email: 'invalid-email',
+        age: 25
+      };
+      
+      // Act & Assert
+      await expect(userService.createUser(invalidUserData))
+        .rejects
+        .toThrow('Invalid email format');
+      
+      expect(mockDatabase.save).not.toHaveBeenCalled();
+    });
+    
+    test('should handle database errors gracefully', async () => {
+      // Arrange
+      const userData = {
+        name: 'Jane Doe', 
+        email: 'jane@example.com',
+        age: 30
+      };
+      mockDatabase.save.mockRejectedValue(new Error('Database connection failed'));
+      
+      // Act & Assert
+      await expect(userService.createUser(userData))
+        .rejects
+        .toThrow('Failed to create user');
+    });
+  });
+  
+  describe('getUserById', () => {
+    test('should return user when found', async () => {
+      // Arrange
+      const userId = 'user_123';
+      const expectedUser = {
+        id: userId,
+        name: 'John Doe',
+        email: 'john@example.com'
+      };
+      mockDatabase.findById.mockResolvedValue(expectedUser);
+      
+      // Act
+      const result = await userService.getUserById(userId);
+      
+      // Assert
+      expect(result).toEqual(expectedUser);
+      expect(mockDatabase.findById).toHaveBeenCalledWith(userId);
+    });
+    
+    test('should return null when user not found', async () => {
+      // Arrange
+      const userId = 'nonexistent_user';
+      mockDatabase.findById.mockResolvedValue(null);
+      
+      // Act
+      const result = await userService.getUserById(userId);
+      
+      // Assert
+      expect(result).toBeNull();
+      expect(mockDatabase.findById).toHaveBeenCalledWith(userId);
+    });
+  });
+});

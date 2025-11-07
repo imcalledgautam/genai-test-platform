@@ -1,0 +1,84 @@
+// Bad Example: Brittle test with DOM selectors and timing issues
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+
+describe('User Interface Tests', () => {
+  let browser;
+  let page;
+  
+  // BAD: No proper setup/teardown
+  test('login form should work', async () => {
+    browser = await puppeteer.launch();
+    page = await browser.newPage();
+    
+    // BAD: Real network call to external service
+    await page.goto('https://example.com/login');
+    
+    // BAD: Brittle selectors that break with UI changes
+    await page.click('#login-btn-submit-final-v2');
+    
+    // BAD: Hard-coded sleep instead of waiting for events
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // BAD: Vague assertion
+    const text = await page.$eval('body', el => el.textContent);
+    expect(text).toContain('something');
+    
+    // BAD: Browser never closed - resource leak
+  });
+  
+  test('should test with current date', () => {
+    // BAD: Non-deterministic - depends on when test runs
+    const now = new Date();
+    const user = {
+      createdAt: now,
+      isActive: now.getDay() !== 0  // Fails on Sundays!
+    };
+    
+    expect(user.isActive).toBe(true);  // BAD: Will fail on Sundays
+  });
+  
+  test('file system dependency', () => {
+    // BAD: Depends on specific file existing
+    const data = fs.readFileSync('/tmp/test-data.json', 'utf8');
+    const parsed = JSON.parse(data);
+    
+    // BAD: No error handling if file doesn't exist
+    expect(parsed.value).toBe(42);
+    
+    // BAD: Modifies global state
+    fs.writeFileSync('/tmp/test-data.json', JSON.stringify({ value: 43 }));
+  });
+  
+  test('random data test', () => {
+    // BAD: Non-deterministic random data
+    const randomValue = Math.random() * 100;
+    const result = processValue(randomValue);
+    
+    // BAD: Imprecise assertion with random data
+    expect(result).toBeGreaterThan(0);  // Tells us nothing useful
+  });
+  
+  test('shared state pollution', () => {
+    // BAD: Modifies global object
+    global.testCounter = (global.testCounter || 0) + 1;
+    
+    const result = calculateSomething(global.testCounter);
+    
+    // BAD: Test result depends on execution order
+    expect(result).toBe(1);  // Will fail if tests run in different order
+  });
+  
+  test('network dependent test', async () => {
+    // BAD: Makes real HTTP calls - slow and unreliable
+    const response = await fetch('https://api.github.com/users/octocat');
+    
+    // BAD: Test fails if network is down or API changes
+    expect(response.status).toBe(200);
+    
+    const data = await response.json();
+    
+    // BAD: Depends on external data that might change
+    expect(data.login).toBe('octocat');
+  });
+});

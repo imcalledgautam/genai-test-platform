@@ -1,0 +1,162 @@
+// Anti-pattern: Brittle DOM selectors and timing issues
+
+const { test, expect } = require('@playwright/test');
+const userService = require('../src/userService');
+
+// BAD: Brittle DOM-based tests
+test.describe('User Interface Tests - BAD EXAMPLES', () => {
+  
+  test('login form with brittle selectors', async ({ page }) => {
+    await page.goto('/login');
+    
+    // Anti-pattern 1: Brittle CSS selectors that break with UI changes
+    await page.fill('div.container > form > div:nth-child(1) > input', 'user@test.com');
+    await page.fill('div.container > form > div:nth-child(2) > input', 'password123');
+    
+    // Anti-pattern 2: No explicit wait, race conditions
+    await page.click('button');
+    
+    // Anti-pattern 3: Generic text assertion
+    expect(await page.textContent('body')).toContain('Welcome');
+  });
+
+  test('dynamic content with timing issues', async ({ page }) => {
+    await page.goto('/dashboard');
+    
+    // Anti-pattern 4: Hard-coded delays instead of proper waits
+    await page.waitForTimeout(2000); // Hope 2 seconds is enough
+    
+    // Anti-pattern 5: Flaky element selection
+    const elements = await page.$$('.dynamic-item');
+    expect(elements.length).toBeGreaterThan(0); // Could be 0 if timing is off
+  });
+
+  test('form submission without proper state management', async ({ page }) => {
+    // Anti-pattern 6: Test depends on previous test state
+    await page.goto('/profile');
+    
+    // Assumes previous test left user logged in
+    await page.fill('#name', 'New Name');
+    await page.click('button[type="submit"]');
+    
+    // Anti-pattern 7: No verification of actual submission
+    await expect(page.locator('.success')).toBeVisible();
+  });
+});
+
+// BAD: Unit tests with real network calls
+describe('UserService - BAD PATTERNS', () => {
+  
+  test('fetch user data with real API call', async () => {
+    // Anti-pattern 8: Real network calls in unit tests
+    const userData = await userService.fetchUser('123');
+    
+    // Anti-pattern 9: Depends on external API state
+    expect(userData.name).toBe('John Doe'); // Fails if API data changes
+    expect(userData.active).toBe(true);
+  });
+
+  test('user validation with random data', () => {
+    // Anti-pattern 10: Non-deterministic test data
+    const randomEmail = `user${Math.random()}@test.com`;
+    const randomAge = Math.floor(Math.random() * 100);
+    
+    const user = { email: randomEmail, age: randomAge };
+    const isValid = userService.validateUser(user);
+    
+    // Anti-pattern 11: Test outcome depends on random input
+    if (randomAge >= 18) {
+      expect(isValid).toBe(true);
+    } else {
+      expect(isValid).toBe(false);
+    }
+  });
+
+  test('async operation without proper error handling', async () => {
+    // Anti-pattern 12: No error handling in tests
+    const result = await userService.processUserData({ id: 'invalid' });
+    
+    // This might throw and crash the test suite
+    expect(result.processed).toBe(true);
+  });
+
+  test('shared mutable state between tests', () => {
+    // Anti-pattern 13: Tests that modify shared objects
+    const sharedConfig = userService.getGlobalConfig();
+    sharedConfig.maxUsers = 5; // Affects other tests
+    
+    expect(userService.canAddUser()).toBe(true);
+  });
+});
+
+// BAD: Integration tests that are too broad
+describe('Full Application Flow - TOO BROAD', () => {
+  
+  test('complete user journey in one test', async ({ page }) => {
+    // Anti-pattern 14: Testing too much in one test
+    
+    // Register
+    await page.goto('/register');
+    await page.fill('[data-testid="email"]', 'test@example.com');
+    await page.fill('[data-testid="password"]', 'password123');
+    await page.click('[data-testid="register-btn"]');
+    
+    // Verify email (assumes email verification works)
+    await page.goto('/verify?token=assume-this-works');
+    
+    // Login
+    await page.goto('/login');
+    await page.fill('[data-testid="email"]', 'test@example.com');
+    await page.fill('[data-testid="password"]', 'password123');
+    await page.click('[data-testid="login-btn"]');
+    
+    // Navigate to profile
+    await page.click('[data-testid="profile-link"]');
+    
+    // Update profile
+    await page.fill('[data-testid="name"]', 'Updated Name');
+    await page.click('[data-testid="save-btn"]');
+    
+    // Check dashboard
+    await page.goto('/dashboard');
+    
+    // Multiple assertions that could fail for different reasons
+    await expect(page.locator('[data-testid="welcome"]')).toContainText('Updated Name');
+    await expect(page.locator('[data-testid="user-count"]')).toBeVisible();
+    await expect(page.locator('[data-testid="recent-activity"]')).toHaveCount(3);
+    
+    // If this fails, it's hard to know which part broke
+  });
+});
+
+// BAD: Tests without proper cleanup
+describe('Resource Management - BAD', () => {
+  
+  test('creates files without cleanup', () => {
+    const fs = require('fs');
+    const testFile = '/tmp/test-file-' + Date.now();
+    
+    // Anti-pattern 15: Creates resources without cleanup
+    fs.writeFileSync(testFile, 'test data');
+    
+    const content = fs.readFileSync(testFile, 'utf8');
+    expect(content).toBe('test data');
+    
+    // Missing: fs.unlinkSync(testFile);
+  });
+
+  test('opens connections without closing', async () => {
+    const mongoose = require('mongoose');
+    
+    // Anti-pattern 16: Opens connections without proper cleanup
+    await mongoose.connect('mongodb://localhost/test');
+    
+    const User = mongoose.model('User', { name: String });
+    const user = new User({ name: 'Test' });
+    await user.save();
+    
+    expect(user.name).toBe('Test');
+    
+    // Missing: await mongoose.connection.close();
+  });
+});

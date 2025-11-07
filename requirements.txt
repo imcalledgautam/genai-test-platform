@@ -1,13 +1,15 @@
-streamlit
-psycopg2-binary
-pandas
-matplotlib
-seaborn
-sqlalchemy
-numpy
-pillow
-requests
-pytest
-pytest-cov
-coverage
+# GenAI Test Platform - Core Dependencies
+# Essential packages for AI-powered test generation and validation
+
+# Testing Frameworks
+pytest>=8.0.0
+pytest-cov>=4.0.0
+coverage>=7.0.0
+
+# HTTP and API Testing
+requests>=2.31.0
+
+# Code Analysis and Validation
+pathlib2>=2.3.7
+typing-extensions>=4.0.0
 

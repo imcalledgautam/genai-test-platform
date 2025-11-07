@@ -61,3 +61,7 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+
+# GenAI artifacts
+genai_artifacts/
+genai-tools/

@@ -1,0 +1,164 @@
+# Good Example: Calculator Sum Function Test
+# Demonstrates: Clear AAA structure, deterministic, comprehensive edge cases
+
+import pytest
+from calculator import add, divide, validate_input
+
+class TestCalculatorAdd:
+    """Test suite for calculator add function"""
+    
+    def test_add_positive_numbers(self):
+        """Test adding two positive numbers"""
+        # Arrange
+        a, b = 5, 3
+        expected = 8
+        
+        # Act
+        result = add(a, b)
+        
+        # Assert
+        assert result == expected
+        assert isinstance(result, (int, float))
+    
+    def test_add_negative_numbers(self):
+        """Test adding negative numbers"""
+        # Arrange
+        a, b = -5, -3
+        expected = -8
+        
+        # Act
+        result = add(a, b)
+        
+        # Assert
+        assert result == expected
+    
+    def test_add_mixed_signs(self):
+        """Test adding positive and negative numbers"""
+        # Arrange
+        test_cases = [
+            (5, -3, 2),
+            (-5, 3, -2),
+            (0, 5, 5),
+            (5, 0, 5)
+        ]
+        
+        for a, b, expected in test_cases:
+            # Act
+            result = add(a, b)
+            
+            # Assert
+            assert result == expected, f"add({a}, {b}) should equal {expected}"
+    
+    def test_add_large_numbers(self):
+        """Test adding large numbers"""
+        # Arrange
+        a = 999999999999
+        b = 1
+        expected = 1000000000000
+        
+        # Act
+        result = add(a, b)
+        
+        # Assert
+        assert result == expected
+    
+    def test_add_decimal_precision(self):
+        """Test adding decimal numbers with precision"""
+        # Arrange
+        a, b = 0.1, 0.2
+        expected = 0.3
+        
+        # Act
+        result = add(a, b)
+        
+        # Assert
+        assert abs(result - expected) < 1e-10, "Float precision issue"
+    
+    def test_add_type_validation(self):
+        """Test that add function validates input types"""
+        # Arrange & Act & Assert
+        with pytest.raises(TypeError, match="Input must be numeric"):
+            add("5", 3)
+        
+        with pytest.raises(TypeError, match="Input must be numeric"):
+            add(5, "3")
+        
+        with pytest.raises(TypeError, match="Input must be numeric"):
+            add(None, 5)
+
+class TestCalculatorDivide:
+    """Test suite for calculator divide function"""
+    
+    def test_divide_normal_case(self):
+        """Test normal division operation"""
+        # Arrange
+        a, b = 10, 2
+        expected = 5.0
+        
+        # Act
+        result = divide(a, b)
+        
+        # Assert
+        assert result == expected
+        assert isinstance(result, float)
+    
+    def test_divide_by_zero_raises_error(self):
+        """Test that division by zero raises appropriate error"""
+        # Arrange
+        a, b = 10, 0
+        
+        # Act & Assert
+        with pytest.raises(ZeroDivisionError, match="Cannot divide by zero"):
+            divide(a, b)
+    
+    def test_divide_negative_numbers(self):
+        """Test division with negative numbers"""
+        # Arrange
+        test_cases = [
+            (-10, 2, -5.0),
+            (10, -2, -5.0),
+            (-10, -2, 5.0)
+        ]
+        
+        for a, b, expected in test_cases:
+            # Act
+            result = divide(a, b)
+            
+            # Assert
+            assert result == expected
+
+# Fixtures for common test data
+@pytest.fixture
+def sample_numbers():
+    """Provide sample numbers for testing"""
+    return {
+        'positive': [1, 5, 100, 999],
+        'negative': [-1, -5, -100, -999],
+        'zero': [0],
+        'decimal': [0.1, 3.14159, 2.71828]
+    }
+
+@pytest.fixture
+def invalid_inputs():
+    """Provide invalid input examples"""
+    return [
+        "string", 
+        None, 
+        [], 
+        {}, 
+        object(),
+        complex(1, 2)
+    ]
+
+def test_with_fixtures(sample_numbers, invalid_inputs):
+    """Example test using fixtures"""
+    # Test that all valid numbers work
+    for num_list in sample_numbers.values():
+        for num in num_list:
+            result = add(num, 0)
+            assert result == num
+    
+    # Test that invalid inputs are rejected
+    for invalid in invalid_inputs:
+        with pytest.raises(TypeError):
+            add(invalid, 5)

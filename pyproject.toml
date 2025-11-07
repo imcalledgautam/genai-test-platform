@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselected by default)",
+    "integration: marks tests as integration tests (deselected by default)",
+]

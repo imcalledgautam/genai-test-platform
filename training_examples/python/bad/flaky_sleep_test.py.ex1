@@ -1,0 +1,141 @@
+# Bad Example: Flaky Test with Sleep
+# Problems: Non-deterministic, uses sleep, unclear assertions, side effects
+
+import time
+import random
+import requests
+import os
+from calculator import add
+
+class TestCalculatorBad:
+    """Example of poorly written tests - DO NOT FOLLOW"""
+    
+    def test_add_with_sleep(self):
+        """BAD: Uses sleep - makes tests slow and unreliable"""
+        a, b = 5, 3
+        
+        # BAD: Unnecessary sleep
+        time.sleep(0.1)
+        
+        result = add(a, b)
+        
+        # BAD: Vague assertion
+        assert result  # What does this even test?
+    
+    def test_add_with_random_data(self):
+        """BAD: Non-deterministic test that can randomly fail"""
+        # BAD: Random data without seed makes test non-reproducible
+        a = random.randint(1, 100)
+        b = random.randint(1, 100)
+        
+        result = add(a, b)
+        
+        # BAD: Generic assertion that doesn't verify correctness
+        assert result > 0  # This could pass even if add() is broken
+    
+    def test_add_with_network_call(self):
+        """BAD: Makes real network calls - slow, unreliable, external dependency"""
+        # BAD: Network dependency
+        response = requests.get("https://api.github.com")
+        if response.status_code == 200:
+            a, b = 5, 3
+        else:
+            a, b = 1, 1
+        
+        result = add(a, b)
+        
+        # BAD: Test result depends on network
+        assert result == (8 if response.status_code == 200 else 2)
+    
+    def test_add_with_file_operations(self):
+        """BAD: File operations outside temp directories"""
+        # BAD: Creates files in arbitrary location
+        with open("/tmp/test_data.txt", "w") as f:
+            f.write("5,3")
+        
+        # BAD: Doesn't clean up
+        with open("/tmp/test_data.txt", "r") as f:
+            a, b = map(int, f.read().split(","))
+        
+        result = add(a, b)
+        
+        # BAD: Leaves file behind, could affect other tests
+        assert result == 8
+    
+    def test_add_with_global_state(self):
+        """BAD: Modifies global state"""
+        # BAD: Setting environment variable affects other tests
+        os.environ['CALCULATOR_MODE'] = 'strict'
+        
+        result = add(5, 3)
+        
+        # BAD: Doesn't clean up environment
+        assert result == 8
+    
+    def test_add_multiple_assertions_unclear(self):
+        """BAD: Multiple unrelated assertions, unclear failure cause"""
+        result1 = add(1, 2)
+        result2 = add(3, 4)
+        result3 = add(5, 6)
+        
+        # BAD: Multiple assertions make it hard to know which failed
+        assert result1 == 3 and result2 == 7 and result3 == 11
+        
+        # BAD: Unrelated assertion
+        assert len("hello") == 5  # What does string length have to do with add()?
+    
+    def test_add_with_side_effects(self):
+        """BAD: Function call has unexpected side effects"""
+        # BAD: Modifying global counter (shared state)
+        global call_count
+        call_count = getattr(globals(), 'call_count', 0) + 1
+        
+        result = add(5, 3)
+        
+        # BAD: Assertion depends on how many times test has run
+        assert result == 8 + call_count  # This will fail on second run!
+    
+    def test_add_with_exception_catching_too_broad(self):
+        """BAD: Catches exceptions too broadly, hides real issues"""
+        try:
+            result = add("invalid", "input")  # This should raise TypeError
+            
+            # BAD: If exception is raised, this assertion never runs
+            assert result == "invalidinput"
+            
+        except Exception:
+            # BAD: Catches all exceptions, including the TypeError we should test
+            assert True  # This hides the real problem
+    
+    def test_add_depends_on_previous_test(self):
+        """BAD: Test depends on order of execution"""
+        # BAD: Assumes previous test set global state
+        mode = os.environ.get('CALCULATOR_MODE', 'normal')
+        
+        if mode == 'strict':
+            expected = 8
+        else:
+            expected = 7  # Wrong expectation
+        
+        result = add(5, 3)
+        
+        # BAD: Different expectation based on test order
+        assert result == expected
+    
+    def test_add_with_hardcoded_datetime(self):
+        """BAD: Time-dependent test that will break in the future"""
+        current_time = time.time()
+        
+        # BAD: Test will fail after 2025
+        if current_time > 1735689600:  # Jan 1, 2025
+            pytest.skip("Test expired")
+        
+        result = add(5, 3)
+        assert result == 8
+
+# BAD: Global state that affects tests
+call_count = 0
+
+# BAD: No cleanup, could affect other test files
+import calculator
+calculator._debug_mode = True

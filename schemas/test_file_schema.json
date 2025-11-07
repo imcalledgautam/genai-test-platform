@@ -1,0 +1,318 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://genai-test-platform.com/schemas/test-file.json",
+  "title": "GenAI Test File Output Schema",
+  "description": "Schema for LLM-generated test file output to ensure structured, valid test code",
+  "type": "object",
+  "required": [
+    "file_path",
+    "language", 
+    "framework",
+    "content",
+    "metadata",
+    "validation"
+  ],
+  "properties": {
+    "file_path": {
+      "type": "string",
+      "pattern": "^(tests?|__tests__|src/test)/.+\\.(py|js|ts|java)$",
+      "description": "Target path for the test file in appropriate test directory"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["python", "javascript", "typescript", "java"],
+      "description": "Programming language of the test file"
+    },
+    "framework": {
+      "type": "string", 
+      "enum": ["pytest", "unittest", "jest", "mocha", "vitest", "junit", "testng"],
+      "description": "Testing framework used"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 50,
+      "description": "Complete test file content - must be valid, runnable code"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["purpose", "target_symbols", "test_count"],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Clear description of what this test file covers"
+        },
+        "target_symbols": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.]*$"
+          },
+          "description": "List of functions/classes being tested"
+        },
+        "test_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Number of test functions in this file"
+        },
+        "coverage_focus": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["happy_path", "error_handling", "edge_cases", "boundary_values", "null_handling"]
+          },
+          "description": "Coverage areas addressed by tests"
+        },
+        "complexity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Overall complexity of the tests"
+        }
+      },
+      "additionalProperties": false
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["module", "type", "verified"],
+        "properties": {
+          "module": {
+            "type": "string",
+            "description": "Import module name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["standard_library", "third_party", "local_module", "test_framework"],
+            "description": "Type of import"
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Import availability has been verified"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Specific items imported from module"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "All imports used in the test file"
+    },
+    "test_functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "target_symbol", "test_type", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^test_[a-zA-Z0-9_]+$",
+            "description": "Test function name following conventions"
+          },
+          "target_symbol": {
+            "type": "string",
+            "description": "The function/class this test is verifying"
+          },
+          "test_type": {
+            "type": "string",
+            "enum": ["unit", "integration", "property_based", "parametrized"],
+            "description": "Type of test"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "What this test verifies"
+          },
+          "setup_required": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["fixtures", "mocks", "temporary_files", "database", "environment_vars"]
+            },
+            "description": "Setup requirements for this test"
+          },
+          "assertions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["type", "description"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["equality", "truthiness", "exception", "type_check", "membership", "range", "regex"]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "What this assertion verifies"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Assertions made in this test function"
+          },
+          "estimated_runtime": {
+            "type": "string",
+            "enum": ["fast", "medium", "slow"],
+            "description": "Expected test execution speed"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Individual test functions in the file"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "scope"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "description": "Fixture function name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["data", "mock_object", "temporary_resource", "test_client", "database_session"],
+            "description": "Type of fixture"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["function", "class", "module", "session"],
+            "description": "Pytest fixture scope"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 150,
+            "description": "What this fixture provides"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other fixtures this fixture depends on"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Test fixtures defined in the file"
+    },
+    "validation": {
+      "type": "object",
+      "required": ["syntax_valid", "imports_available", "policy_compliant"],
+      "properties": {
+        "syntax_valid": {
+          "type": "boolean",
+          "description": "Code passes syntax validation for target language"
+        },
+        "imports_available": {
+          "type": "boolean",
+          "description": "All imported modules are available"
+        },
+        "policy_compliant": {
+          "type": "boolean", 
+          "description": "Code passes policy checker validation"
+        },
+        "runnable": {
+          "type": "boolean",
+          "description": "Tests can be discovered and executed by test framework"
+        },
+        "deterministic": {
+          "type": "boolean",
+          "description": "Tests do not contain non-deterministic behavior"
+        },
+        "isolated": {
+          "type": "boolean",
+          "description": "Tests do not depend on external state or side effects"
+        },
+        "validation_errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["line", "message", "severity"],
+            "properties": {
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["error", "warning", "info"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Validation issues found in the generated code"
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution_info": {
+      "type": "object",
+      "properties": {
+        "estimated_duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated test execution time in seconds"
+        },
+        "resource_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["filesystem", "network", "database", "environment_vars", "subprocess"]
+          },
+          "description": "External resources needed by tests"
+        },
+        "parallel_safe": {
+          "type": "boolean",
+          "description": "Whether tests can be run in parallel with others"
+        },
+        "cleanup_required": {
+          "type": "boolean",
+          "description": "Whether tests require explicit cleanup"
+        }
+      },
+      "additionalProperties": false
+    },
+    "quality_metrics": {
+      "type": "object",
+      "properties": {
+        "cyclomatic_complexity": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Estimated complexity score"
+        },
+        "assertion_density": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Average assertions per test function"
+        },
+        "test_coverage_estimate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Estimated coverage percentage"
+        },
+        "maintainability_score": {
+          "type": "string",
+          "enum": ["excellent", "good", "fair", "poor"],
+          "description": "Overall maintainability assessment"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

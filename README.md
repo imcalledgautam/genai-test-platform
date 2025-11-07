@@ -1,164 +1,313 @@
-# 🤖 GenAI Test Platform
-**An AI-powered automated testing platform that generates comprehensive tests from code changes using LLMs.**
+# GenAI Test Platform v2.0 - Production Ready
 
-A complete CI/CD solution that automatically detects code changes, analyzes context, generates targeted tests using Large Language Models, and provides comprehensive coverage reporting.
+**One script, all stacks. AI-powered testing with human oversight.**
 
----
+A production-ready, stack-agnostic AI testing platform that can be deployed to any repository with minimal setup. Supports Python, Node.js, and Java projects with comprehensive safety guardrails and human-in-the-loop validation.
 
-## 🚀 **Complete Automated Workflow**
+## 🚀 Quick Start
 
-Push commits → GitHub Actions automatically:
-1. **Detects Changes** - Identifies modified Python files
-2. **Builds Context** - Creates comprehensive analysis bundle  
-3. **Installs Ollama** - Sets up LLM environment in CI
-4. **Generates Tests** - Creates pytest files using AI
-5. **Runs Tests** - Executes tests with coverage analysis
-6. **Reports Results** - Comprehensive GitHub Actions summary
+### Option 1: Single Command Setup
+Add this workflow to any repository:
 
-## ✨ **Key Features**
+```yaml
+name: GenAI Test Platform
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Run GenAI Test Platform
+        run: |
+          curl -L https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools/genai_test_runner.py -o runner.py
+          python runner.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: genai_artifacts/
+```
 
-- 🔍 **Smart Change Detection** - Git-based Python file analysis
-- 🧠 **AI Test Generation** - Context-aware test creation using Qwen2.5-Coder
-- 🛡️ **Safety Validation** - AST parsing, import safety, retry logic
-- 📊 **Coverage Analysis** - Comprehensive test coverage reporting
-- 🔄 **Complete CI Automation** - Zero manual intervention required
-- 📈 **GitHub Integration** - Rich summaries and artifact uploads
+### Option 2: Copy Complete Workflow
+Use our pre-built workflow: [genai-unified-runner.yml](.github/workflows/genai-unified-runner.yml)
 
----
+## 🏗️ Architecture Overview
 
-## 🎯 **POC Demonstration**
+### Core Components
 
-This repository demonstrates a complete **Proof of Concept** for automated test generation:
+1. **`genai_test_runner.py`** - Universal test runner that detects stack, installs deps, generates tests, runs them, and aggregates results
+2. **`context_builder.py`** - Extracts repository facts to prevent AI hallucination  
+3. **`policy_checker.py`** - Validates generated tests for security and quality
+4. **`training_examples/`** - Curated good/bad test patterns for few-shot prompting
+5. **HITL workflows** - Human-in-the-loop review system with automated PR creation
 
-### **What It Generates**
-- **Functional Tests**: Core logic validation
-- **Edge Case Tests**: Boundary conditions and error handling  
-- **Regression Tests**: Prevents breaking existing functionality
-- **Comprehensive Coverage**: Multiple test approaches per function
+### Execution Flow
 
-### **Current Test Results**
-- ✅ **30 generated tests** across multiple modules
-- 📊 **28% coverage** with room for improvement
-- 🔧 **2 failing tests** (revealing actual code issues!)
-- 🚀 **Fully automated pipeline** ready for production scaling
+```mermaid
+graph TD
+    A[Repository Push] --> B[Detect Stack]
+    B --> C[Install Dependencies]
+    C --> D{AI Generation Enabled?}
+    D -->|Yes| E[Build Context]
+    E --> F[Generate Tests with LLM]
+    F --> G[Validate Generated Tests]
+    D -->|No| H[Run Native Tests]
+    G --> H
+    H --> I[Collect Reports]
+    I --> J[Upload Artifacts]
+    
+    F --> K{Human Review Required?}
+    K -->|Yes| L[Create PR Branch]
+    L --> M[Human Reviews Tests]
+    M --> N[Merge After Approval]
+    K -->|No| H
+```
 
----
+## 🎯 Key Features
 
-## 🛠️ **Technologies & Architecture**
+### Universal Stack Support
+- **Python**: pytest, unittest, coverage.py
+- **Node.js**: Jest, Mocha, npm test
+- **Java**: JUnit, TestNG, Maven/Gradle
 
-### **Core Stack**
-- **🐍 Python 3.10+** - Primary development language
-- **🤖 Ollama + Qwen2.5-Coder** - Local LLM for test generation
-- **🧪 pytest + coverage** - Testing framework and analysis
-- **⚡ GitHub Actions** - Complete CI/CD automation
-- **📊 Streamlit** - Demo dashboard (legacy component)
+### AI-Powered Test Generation
+- **LLM Integration**: Ollama + Qwen2.5-Coder for local/CI generation
+- **Context Awareness**: Analyzes existing code to generate relevant tests
+- **Few-Shot Learning**: Uses curated examples for better output quality
 
-### **LLM Agent Components**
-- `enhanced_context_builder.py` - Git diff analysis & context bundling
-- `generate_tests.py` - AI-powered test generation with validation
-- `run_tests.py` - Local test execution with coverage
-- `code_analyzer.py` - Static code analysis and guidance
+### Safety & Security
+- **Policy Enforcement**: Blocks dangerous patterns (sleep, network calls, eval)
+- **Static Validation**: Syntax and compilation checks
+- **Sandbox Execution**: Safe test execution with resource limits
+- **Human Oversight**: Required approval for AI-generated tests
 
----
+### Quality Assurance  
+- **Anti-Pattern Detection**: Identifies flaky, non-deterministic tests
+- **Quality Scoring**: Automated assessment of test quality (0.0-1.0)
+- **Best Practice Enforcement**: AAA structure, clear assertions, proper naming
 
-## 🚀 **Quick Start**
+## 📋 What the LLM Needs (Input Specification)
 
-### **Automatic (Recommended)**
-Just push your code changes to trigger the complete pipeline:
+For accurate test generation without hallucination, provide:
 
+### A. Code & Configuration
+```json
+{
+  "repository_manifest": {
+    "total_files": 150,
+    "files": [{"path": "src/calc.py", "size": 1024}],
+    "config_files": ["requirements.txt", "pytest.ini"]
+  },
+  "public_surface": [
+    {"type": "function", "name": "add", "file": "src/calc.py", "args": ["a", "b"]}
+  ],
+  "dependencies": ["pytest", "requests", "numpy==1.21.0"]
+}
+```
+
+### B. Behavioral Specs  
+- Function docstrings and type hints
+- API contracts (OpenAPI, GraphQL schemas)
+- Domain invariants ("totals must balance")
+- Error handling expectations
+
+### C. Execution Constraints
+- Commands: `pytest -v --cov=src/`
+- Allowed mocks: `requests`, `datetime`, `random`
+- Forbidden: `sleep()`, real network calls, file system writes
+
+### D. Test Expectations
+- Coverage goals: critical paths ≥ 80%
+- Patterns: AAA structure, descriptive names
+- Framework: pytest fixtures, parametrized tests
+
+### E. Quality Examples (Few-Shot)
+```python
+# Good example
+def test_add_positive_numbers():
+    # Arrange
+    a, b = 5, 3
+    # Act  
+    result = add(a, b)
+    # Assert
+    assert result == 8
+
+# Bad example (don't generate)
+def test_add_with_sleep():
+    time.sleep(0.1)  # ❌ Forbidden
+    assert add(5, 3)  # ❌ Vague assertion
+```
+
+## 🛡️ Guardrails & Validation
+
+### Policy Enforcement
+- **Forbidden Patterns**: `sleep()`, `eval()`, subprocess, network calls
+- **Required Patterns**: Assertions, test functions, proper naming
+- **Security Checks**: No code injection, file system access, or privileged operations
+
+### Quality Metrics
+```python
+quality_score = (
+    descriptive_names * 0.2 +
+    proper_assertions * 0.3 + 
+    error_handling * 0.2 +
+    edge_cases * 0.2 +
+    documentation * 0.1
+)
+```
+
+### Validation Pipeline
+1. **Syntax Check**: AST parsing for Python, Node.js compilation check
+2. **Policy Check**: Regex-based forbidden pattern detection  
+3. **Quality Assessment**: Best practice compliance scoring
+4. **Execution Safety**: Sandbox import and collection testing
+
+## 👥 Human-in-the-Loop (HITL)
+
+### Automated PR Creation
+When AI generates tests, the system:
+1. Creates branch `genai/tests-YYYYMMDD-HHMMSS`
+2. Commits generated tests + validation reports
+3. Opens PR with comprehensive review checklist
+4. Requires human approval before merge
+
+### Review Checklist
+- **Functional**: Tests actually verify intended behavior
+- **Quality**: Clear names, AAA structure, specific assertions
+- **Safety**: No sleep, network calls, or non-deterministic patterns  
+- **Technical**: Valid imports, proper mocking, framework compliance
+
+### PR Template
+Our [PR template](.github/pull_request_template_genai.md) provides:
+- Structured review checklist
+- Validation results summary
+- Local testing instructions
+- Security and quality guidelines
+
+## 📊 Training & Fine-Tuning
+
+### Dataset Structure
+```
+training_examples/
+  python/
+    good/
+      calc_sum_test.py.ex1     # ✅ Proper AAA, edge cases
+      api_routes_test.py.ex2   # ✅ Mocking, HTTP testing
+    bad/  
+      flaky_sleep_test.py.ex1  # ❌ Uses sleep, vague assertions
+      brittle_mocks.py.ex2     # ❌ Shared state, order dependency
+```
+
+### Metadata Schema
+```json
+{
+  "file": "calc_sum_test.py.ex1",
+  "category": "good",
+  "language": "python",
+  "principles": ["deterministic", "isolated", "AAA"],
+  "violations": [],
+  "learning_points": ["Clear test naming", "Comprehensive edge cases"]
+}
+```
+
+## 📈 Deployment Options
+
+### 1. Individual Repository
+Copy workflow file to `.github/workflows/genai-tests.yml`
+
+### 2. Organization-Wide (GitHub Actions)
+Use our [reusable action](.github/actions/genai-test-generator/action.yml):
+```yaml
+- uses: imcalledgautam/genai-test-platform/.github/actions/genai-test-generator@main
+  with:
+    stack: python
+    enable-llm: true
+```
+
+### 3. Organization Template  
+Add to organization `.github` repository for automatic inheritance
+
+### 4. Centralized Service
+Deploy webhook service that monitors all repositories:
 ```bash
-git add .
-git commit -m "feat: your changes here"  
-git push origin main
+python centralized-service.py --github-token $TOKEN --org myorg
 ```
 
-**→ Check GitHub Actions tab for complete automated results!**
+## 🔧 Configuration
 
-### **Manual Local Testing**
+### Environment Variables
+- `GENAI_ENABLE`: Enable/disable AI generation (`true`/`false`)
+- `OLLAMA_MODEL`: LLM model to use (`qwen2.5-coder:1.5b`)
+- `GENAI_TIMEOUT`: Generation timeout in seconds (`1800`)
+
+### Stack-Specific Config
+- **Python**: Automatically detects pytest/unittest, requirements.txt
+- **Node.js**: Uses package.json scripts, supports Jest/Mocha  
+- **Java**: Maven/Gradle detection, JUnit/TestNG support
+
+### Quality Thresholds
+```json
+{
+  "min_quality_score": 0.7,
+  "require_edge_cases": true,
+  "enforce_aaa_structure": true,
+  "block_on_security_violations": true
+}
+```
+
+## 📋 Usage Examples
+
+### Basic Usage
 ```bash
-# 1. Clone repository
-git clone https://github.com/imcalledgautam/genai-test-platform.git
-cd genai-test-platform
+# Run on any repository
+python tools/genai_test_runner.py
 
-# 2. Install dependencies  
-pip install -r requirements.txt
+# Disable AI generation
+python tools/genai_test_runner.py --no-llm
 
-# 3. Build context bundle
-python llm_agent/enhanced_context_builder.py
-
-# 4. Generate tests (requires Ollama)
-python llm_agent/generate_tests.py
-
-# 5. Run tests with coverage
-python llm_agent/run_tests.py
+# Override stack detection  
+python tools/genai_test_runner.py --stack python
 ```
+
+### Validation Only
+```bash
+# Check existing tests
+python tools/policy_checker.py tests/ --stack python
+
+# Generate quality report
+python tools/policy_checker.py tests/ --output quality_report.json
+```
+
+### Context Analysis
+```bash
+# Build repository context
+python tools/context_builder.py
+
+# Custom output location
+python tools/context_builder.py --output /tmp/context.json
+```
+
+## 🚀 Roadmap
+
+- [ ] **GitHub App**: One-click installation across organizations
+- [ ] **Web Dashboard**: Central monitoring and control panel
+- [ ] **Multi-LLM Support**: OpenAI, Anthropic, local models
+- [ ] **Advanced Metrics**: Test effectiveness scoring, regression detection
+- [ ] **IDE Integration**: VS Code extension for local test generation
+
+## 🤝 Contributing
+
+1. **Add Training Examples**: Submit good/bad test patterns with metadata
+2. **Improve Validation**: Enhance policy checking for specific frameworks
+3. **Language Support**: Add new programming language detection and validation
+4. **LLM Integration**: Add support for additional AI models
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## 📂 **Repository Structure**
-
-```
-genai-test-platform/
-├── .github/workflows/           # GitHub Actions CI/CD
-│   ├── detect_changes.yml      # Main pipeline (complete automation)
-│   └── run_tests.yml           # Standalone test runner
-├── llm_agent/                  # AI test generation engine
-│   ├── enhanced_context_builder.py  # Context analysis
-│   ├── generate_tests.py       # LLM test generation  
-│   ├── run_tests.py           # Test execution
-│   └── prompt_template.txt     # LLM prompt template
-├── tests/generated/            # AI-generated test files
-├── code/                      # Sample application code
-├── ci_artifacts/              # Build artifacts & context bundles
-└── requirements.txt           # Python dependencies
-```
-
----
-
-## 🎯 **Next Steps & Roadmap**
-
-### **Phase 2 Enhancements**
-- 🎨 **Risk-Based Prioritization** - Focus on high-impact changes
-- 💬 **Natural Language Interface** - Chat-based test requests
-- 🔧 **Self-Healing Tests** - Automatic test maintenance
-- 📊 **Advanced Metrics** - Quality scoring and trends
-- 🌐 **Multi-Language Support** - Beyond Python
-
-### **Production Scaling**
-- 🏗️ **Self-Hosted Runners** - Dedicated CI infrastructure
-- 🔐 **Enterprise Security** - Advanced safety controls
-- 📈 **Performance Optimization** - Faster test generation
-- 🔄 **Workflow Customization** - Team-specific configurations
-
----
-
-## 🤝 **Contributing**
-
-This is a **Proof of Concept** demonstrating AI-powered test automation. 
-
-**Current Status**: ✅ **Complete automated pipeline ready for production scaling**
-
-**Key Achievement**: End-to-end workflow from code push → AI analysis → test generation → execution → reporting
-
----
-
-## 📄 **License**
-
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-**🚀 Ready to see AI-powered testing in action? Just push a commit and watch the magic happen!**
-```
-streamlit run dashboard.py
-```
-Data Source
-The current data is mock data generated using Faker for demonstration purposes.
-
-To generate your own transaction data, simply run:
-```
-python generate_mock_data.py
-```
-
-🤝 Contributing
-Feel free to fork this repository, submit issues, and send pull requests. Contributions are welcome!
+**GenAI Test Platform v2.0** - Bringing AI-powered testing to every repository with enterprise-grade safety and human oversight.

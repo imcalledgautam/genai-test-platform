@@ -1,0 +1,95 @@
+name: 'GenAI Test Generator'
+description: 'Generate AI-powered tests for your code automatically'
+author: 'GenAI Test Platform'
+
+branding:
+  icon: 'zap'
+  color: 'purple'
+
+inputs:
+  files:
+    description: 'Files to generate tests for (comma-separated)'
+    required: false
+    default: ''
+  model:
+    description: 'LLM model to use'
+    required: false
+    default: 'qwen2.5-coder:1.5b'
+  auto_approve:
+    description: 'Auto-approve generated tests'
+    required: false
+    default: 'false'
+  coverage_threshold:
+    description: 'Minimum coverage percentage'
+    required: false
+    default: '0'
+
+outputs:
+  tests_generated:
+    description: 'Number of test files generated'
+  tests_passed:
+    description: 'Number of tests that passed'
+  coverage:
+    description: 'Code coverage percentage'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Ollama
+      shell: bash
+      run: |
+        curl -fsSL https://ollama.com/install.sh | sh
+        ollama serve &
+        sleep 10
+        ollama pull ${{ inputs.model }}
+
+    - name: Setup GenAI Platform
+      shell: bash
+      run: |
+        git clone https://github.com/imcalledgautam/genai-test-platform.git genai-tools
+        cd genai-tools && pip install -r requirements.txt
+        pip install pytest pytest-cov
+
+    - name: Generate Tests
+      shell: bash
+      run: |
+        export PYTHONPATH="./genai-tools:$PYTHONPATH"
+        cd genai-tools
+        
+        ARGS=""
+        if [ "${{ inputs.auto_approve }}" = "true" ]; then
+          ARGS="$ARGS --auto-approve"
+        fi
+        if [ -n "${{ inputs.files }}" ]; then
+          ARGS="$ARGS --files ${{ inputs.files }}"
+        fi
+        
+        python tools/unified_test_runner.py $ARGS
+
+    - name: Run Tests
+      shell: bash
+      run: |
+        python -m pytest tests/ -v --cov=. --cov-report=xml --junitxml=test-results.xml || true
+
+    - name: Generate Summary
+      shell: bash
+      run: |
+        echo "# 🤖 GenAI Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -d "tests/generated_by_llm" ]; then
+          count=$(find tests/generated_by_llm -name "*.py" | wc -l)
+          echo "**Tests Generated**: $count" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f "test-results.xml" ]; then
+          echo "**Test Results**: Available in artifacts" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📁 Check artifacts for detailed results" >> $GITHUB_STEP_SUMMARY

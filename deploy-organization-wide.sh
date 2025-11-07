@@ -1,103 +1,238 @@
-#!/bin/bash
+#!/bin/bash#!/bin/bash
+
 # Organization-wide GenAI Test Platform Deployment Script
-# Run this script to add GenAI testing to ALL repositories in your GitHub organization
 
-set -e
+# GenAI Test Platform - Organization-wide Deployment Script  # Run this script to add GenAI testing to ALL repositories in your GitHub organization
 
-GITHUB_TOKEN="${GITHUB_TOKEN}"
+# Version: 2.0
+
+# This script deploys GenAI testing to multiple repositories in an organizationset -e
+
+
+
+set -eGITHUB_TOKEN="${GITHUB_TOKEN}"
+
 GITHUB_ORG="${GITHUB_ORG}"
-WORKFLOW_TEMPLATE_URL="https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/.github/workflow-templates/genai-test-platform.yml"
 
-if [ -z "$GITHUB_TOKEN" ] || [ -z "$GITHUB_ORG" ]; then
-    echo "❌ Error: Please set GITHUB_TOKEN and GITHUB_ORG environment variables"
-    echo "Example:"
-    echo "  export GITHUB_TOKEN='your_github_token'"
-    echo "  export GITHUB_ORG='your_organization_name'"
+ORG="${1}"WORKFLOW_TEMPLATE_URL="https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/.github/workflows/genai-unified-runner.yml"
+
+TOKEN="${GITHUB_TOKEN}"TOOLS_BASE_URL="https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/tools"
+
+
+
+if [ -z "$ORG" ]; thenif [ -z "$GITHUB_TOKEN" ] || [ -z "$GITHUB_ORG" ]; then
+
+    echo "❌ Usage: $0 <organization> [repo1,repo2,...]"    echo "❌ Error: Please set GITHUB_TOKEN and GITHUB_ORG environment variables"
+
+    echo "   Set GITHUB_TOKEN environment variable"    echo "Example:"
+
+    exit 1    echo "  export GITHUB_TOKEN='your_github_token'"
+
+fi    echo "  export GITHUB_ORG='your_organization_name'"
+
     exit 1
-fi
 
-echo "🚀 Deploying GenAI Test Platform to ALL repositories in organization: $GITHUB_ORG"
-echo "=================================================================="
+if [ -z "$TOKEN" ]; thenfi
 
-# Function to add workflow to a repository
+    echo "❌ GITHUB_TOKEN environment variable is required"
+
+    exit 1echo "🚀 Deploying GenAI Test Platform to ALL repositories in organization: $GITHUB_ORG"
+
+fiecho "=================================================================="
+
+
+
+REPOS="${2}"# Function to add workflow to a repository
+
 add_workflow_to_repo() {
-    local repo_name=$1
-    local repo_full_name="$GITHUB_ORG/$repo_name"
-    
+
+echo "🚀 GenAI Platform - Organization Deployment"    local repo_name=$1
+
+echo "==========================================="    local repo_full_name="$GITHUB_ORG/$repo_name"
+
+echo "Organization: $ORG"    
+
     echo "📦 Processing repository: $repo_full_name"
-    
-    # Check if repo is Python-based
-    repo_info=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-                     "https://api.github.com/repos/$repo_full_name")
-    
+
+# Get repositories    
+
+if [ -z "$REPOS" ]; then    # Check if repo is Python-based
+
+    echo "🔍 Fetching all repositories..."    repo_info=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+
+    REPOS=$(gh repo list "$ORG" --limit 100 --json name --jq '.[].name' | tr '\n' ',' | sed 's/,$//')                     "https://api.github.com/repos/$repo_full_name")
+
+fi    
+
     language=$(echo "$repo_info" | grep -o '"language":"[^"]*"' | cut -d'"' -f4)
-    
+
+echo "📦 Repositories: $REPOS"    
+
     if [ "$language" != "Python" ] && [ "$language" != "python" ]; then
-        echo "  ⏭️  Skipping (not a Python repository: $language)"
-        return
-    fi
-    
-    # Check if workflow already exists
-    existing_workflow=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-                            "https://api.github.com/repos/$repo_full_name/contents/.github/workflows/genai-test-platform.yml" \
-                            | grep -o '"name"')
-    
-    if [ -n "$existing_workflow" ]; then
-        echo "  ✅ GenAI workflow already exists"
-        return
-    fi
-    
-    # Download the workflow template
-    workflow_content=$(curl -s "$WORKFLOW_TEMPLATE_URL")
-    
-    # Create the workflow via GitHub API
-    curl -s -X PUT \
-         -H "Authorization: token $GITHUB_TOKEN" \
-         -H "Content-Type: application/json" \
-         "https://api.github.com/repos/$repo_full_name/contents/.github/workflows/genai-test-platform.yml" \
-         -d "{
-             \"message\": \"🤖 Add GenAI Test Platform automation\",
-             \"content\": \"$(echo "$workflow_content" | base64 -w 0)\",
-             \"branch\": \"main\"
-         }" > /dev/null
-    
-    if [ $? -eq 0 ]; then
-        echo "  ✅ GenAI Test Platform workflow added successfully"
-    else
-        echo "  ❌ Failed to add workflow (check permissions)"
-    fi
-}
 
-# Get all repositories in the organization
-echo "🔍 Fetching repositories from organization: $GITHUB_ORG"
+# Convert comma-separated to array        echo "  ⏭️  Skipping (not a Python repository: $language)"
 
-page=1
+IFS=',' read -ra REPO_ARRAY <<< "$REPOS"        return
+
+    fi
+
+for repo in "${REPO_ARRAY[@]}"; do    
+
+    repo=$(echo "$repo" | xargs) # trim whitespace    # Check if workflow already exists
+
+    echo ""    existing_workflow=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+
+    echo "🔧 Processing: $ORG/$repo"                            "https://api.github.com/repos/$repo_full_name/contents/.github/workflows/genai-test-platform.yml" \
+
+                                | grep -o '"name"')
+
+    # Clone repository    
+
+    if ! gh repo clone "$ORG/$repo" "/tmp/$repo" 2>/dev/null; then    if [ -n "$existing_workflow" ]; then
+
+        echo "   ⚠️  Failed to clone $ORG/$repo (might be private or not exist)"        echo "  ✅ GenAI workflow already exists"
+
+        continue        return
+
+    fi    fi
+
+        
+
+    # Deploy GenAI platform    # Download the workflow template
+
+    cd "/tmp/$repo"    workflow_content=$(curl -s "$WORKFLOW_TEMPLATE_URL")
+
+        
+
+    # Check if already deployed    # Create the workflow via GitHub API
+
+    if [ -f ".github/workflows/genai-testing.yml" ]; then    curl -s -X PUT \
+
+        echo "   ✅ GenAI already deployed, skipping"         -H "Authorization: token $GITHUB_TOKEN" \
+
+        cd - > /dev/null         -H "Content-Type: application/json" \
+
+        rm -rf "/tmp/$repo"         "https://api.github.com/repos/$repo_full_name/contents/.github/workflows/genai-test-platform.yml" \
+
+        continue         -d "{
+
+    fi             \"message\": \"🤖 Add GenAI Test Platform automation\",
+
+                 \"content\": \"$(echo "$workflow_content" | base64 -w 0)\",
+
+    # Run deployment             \"branch\": \"main\"
+
+    if curl -sSL https://raw.githubusercontent.com/imcalledgautam/genai-test-platform/main/deploy-to-repo.sh | bash; then         }" > /dev/null
+
+        echo "   📝 Committing changes..."    
+
+            if [ $? -eq 0 ]; then
+
+        git config user.name "GenAI Platform Bot"        echo "  ✅ GenAI Test Platform workflow added successfully"
+
+        git config user.email "genai-platform@users.noreply.github.com"    else
+
+                echo "  ❌ Failed to add workflow (check permissions)"
+
+        git add .    fi
+
+        git commit -m "feat: Add GenAI Test Platform integration}
+
+
+
+- Automated test generation using AI# Get all repositories in the organization
+
+- GitHub Actions workflow for CI/CDecho "🔍 Fetching repositories from organization: $GITHUB_ORG"
+
+- Configurable test quality gates
+
+- Human-in-the-loop review processpage=1
+
 while true; do
-    repos=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-                 "https://api.github.com/orgs/$GITHUB_ORG/repos?page=$page&per_page=100" \
-                 | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
-    
-    if [ -z "$repos" ]; then
-        break
+
+Generated by: GenAI Test Platform v2.0"    repos=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+
+                         "https://api.github.com/orgs/$GITHUB_ORG/repos?page=$page&per_page=100" \
+
+        # Create PR                 | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
+
+        git checkout -b "genai-platform-integration"    
+
+        git push origin genai-platform-integration    if [ -z "$repos" ]; then
+
+                break
+
+        gh pr create \    fi
+
+            --title "🤖 Add GenAI Test Platform Integration" \    
+
+            --body "This PR adds AI-powered test generation capabilities to the repository.    for repo in $repos; do
+
+        add_workflow_to_repo "$repo"
+
+## What's Added    done
+
+- GitHub Actions workflow for automated test generation    
+
+- LLM-powered code analysis and test creation      page=$((page + 1))
+
+- Human-in-the-loop review processdone
+
+- Configurable quality gates and thresholds
+
+echo ""
+
+## How It Worksecho "🎉 GenAI Test Platform deployment complete!"
+
+1. **Code Analysis**: AI analyzes your code structureecho ""
+
+2. **Test Generation**: Creates comprehensive testsecho "📋 What was deployed:"
+
+3. **Human Review**: Generated tests can be reviewed before executionecho "  ✅ AI-powered test generation workflow"
+
+4. **Quality Gates**: Configurable coverage and quality thresholdsecho "  ✅ Automatic coverage analysis" 
+
+echo "  ✅ Rich GitHub Actions summaries"
+
+## Usageecho "  ✅ Artifact uploads for test results"
+
+- Automatic: Runs on push/PR to main branchesecho ""
+
+- Manual: \`gh workflow run genai-testing.yml\`echo "🚀 Now ALL Python repositories in '$GITHUB_ORG' have automatic AI testing!"
+
+- Custom: \`gh workflow run genai-testing.yml -f files='src/utils.py'\`echo "   Just push code changes to see GenAI in action."
+
+echo ""
+
+## Configurationecho "📊 Monitor results at: https://github.com/orgs/$GITHUB_ORG/repositories"
+Edit \`.genai/config.yml\` to customize:
+- AI model selection
+- File inclusion/exclusion patterns
+- Quality thresholds
+- Review requirements
+
+Generated by: [GenAI Test Platform](https://github.com/imcalledgautam/genai-test-platform)" \
+            --head "genai-platform-integration"
+        
+        echo "   ✅ Created PR for $ORG/$repo"
+    else
+        echo "   ❌ Failed to deploy to $ORG/$repo"
     fi
     
-    for repo in $repos; do
-        add_workflow_to_repo "$repo"
-    done
-    
-    page=$((page + 1))
+    cd - > /dev/null
+    rm -rf "/tmp/$repo"
 done
 
 echo ""
-echo "🎉 GenAI Test Platform deployment complete!"
+echo "🎉 Organization-wide deployment complete!"
 echo ""
-echo "📋 What was deployed:"
-echo "  ✅ AI-powered test generation workflow"
-echo "  ✅ Automatic coverage analysis" 
-echo "  ✅ Rich GitHub Actions summaries"
-echo "  ✅ Artifact uploads for test results"
+echo "📊 Summary:"
+echo "   Organization: $ORG"
+echo "   Repositories processed: ${#REPO_ARRAY[@]}"
 echo ""
-echo "🚀 Now ALL Python repositories in '$GITHUB_ORG' have automatic AI testing!"
-echo "   Just push code changes to see GenAI in action."
+echo "🔧 Next steps:"
+echo "   1. Review and merge the PRs in each repository"
+echo "   2. Configure .genai/config.yml in each repo as needed"
+echo "   3. Monitor the GenAI workflows in Actions tab"
 echo ""
-echo "📊 Monitor results at: https://github.com/orgs/$GITHUB_ORG/repositories"
+echo "📚 Documentation: https://github.com/imcalledgautam/genai-test-platform"

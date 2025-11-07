@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://genai-test-platform.com/schemas/test-plan.json",
+  "title": "GenAI Test Plan Schema",
+  "description": "Strict schema for LLM test generation plans to ensure grounded, valid test creation",
+  "type": "object",
+  "required": [
+    "metadata",
+    "target_analysis", 
+    "test_strategy",
+    "test_files",
+    "validation"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["language", "framework", "generated_at"],
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["python", "node", "java"],
+          "description": "Primary programming language for the tests"
+        },
+        "framework": {
+          "type": "string",
+          "enum": ["pytest", "unittest", "jest", "mocha", "vitest", "junit", "testng"],
+          "description": "Testing framework to use"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when plan was generated"
+        }
+      },
+      "additionalProperties": false
+    },
+    "target_analysis": {
+      "type": "object",
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "description": "Functions/classes to generate tests for",
+          "items": {
+            "type": "object",
+            "required": ["file", "symbol", "kind", "reason", "exists"],
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Source file path relative to repository root"
+              },
+              "symbol": {
+                "type": "string",
+                "description": "Function, class, or method name"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["function", "class", "method", "property"]
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why this symbol needs tests"
+              },
+              "exists": {
+                "type": "boolean",
+                "description": "Whether this symbol exists in the codebase"
+              },
+              "existing_tests": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Existing test files that cover this symbol"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "test_strategy": {
+      "type": "object",
+      "required": ["approach", "priorities"],
+      "properties": {
+        "approach": {
+          "type": "string",
+          "enum": ["comprehensive", "targeted", "risk_based"],
+          "description": "Overall testing approach"
+        },
+        "priorities": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Testing priorities in order"
+        }
+      },
+      "additionalProperties": false
+    },
+    "test_files": {
+      "type": "array",
+      "description": "Test files to generate/modify",
+      "items": {
+        "type": "object", 
+        "required": ["path", "purpose", "coverage_focus"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path where test file should be created"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": ["unit", "integration", "e2e"],
+            "description": "Type of tests in this file"
+          },
+          "coverage_focus": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Areas to focus testing on"
+          },
+          "framework": {
+            "type": "string", 
+            "description": "Test framework to use (pytest, jest, junit)"
+          }
+        }
+      }
+    },
+    "mocks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "External dependencies that should be mocked"
+    },
+    "fixtures": {
+      "type": "array", 
+      "items": {"type": "string"},
+      "description": "Test fixtures/utilities to use"
+    },
+    "forbidden": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Patterns/behaviors that must not appear in tests"
+    },
+    "constraints": {
+      "type": "object",
+      "description": "Additional constraints for test generation",
+      "properties": {
+        "max_test_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10
+        },
+        "coverage_target": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.8
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 30
+        }
+      }
+    },
+    "validation_rules": {
+      "type": "object",
+      "description": "Rules for validating generated tests",
+      "properties": {
+        "require_aaa_pattern": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_docstrings": {
+          "type": "boolean", 
+          "default": true
+        },
+        "max_assertions_per_test": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "language": "python",
+      "targets": [
+        {
+          "file": "src/calculator.py",
+          "symbol": "add", 
+          "kind": "function",
+          "reason": "critical business logic"
+        },
+        {
+          "file": "src/user_service.py", 
+          "symbol": "UserService",
+          "kind": "class",
+          "reason": "api surface"
+        }
+      ],
+      "test_files": [
+        {
+          "path": "tests/test_calculator_add.py",
+          "purpose": "unit",
+          "coverage_focus": ["edge cases", "error handling"],
+          "framework": "pytest"
+        }
+      ],
+      "mocks": ["db", "http"],
+      "fixtures": ["tmpdir", "fakeClock"], 
+      "forbidden": ["sleep", "real network calls", "random without seed"]
+    }
+  ]
+}

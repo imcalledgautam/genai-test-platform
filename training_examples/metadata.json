@@ -1,0 +1,194 @@
+{
+  "version": "2.0",
+  "description": "Training examples for GenAI test generation with good/bad patterns",
+  "last_updated": "2025-11-05T00:00:00Z",
+  "evaluation_criteria": {
+    "good_tests": [
+      "deterministic", "isolated", "AAA_structure", "clear_assertions", 
+      "comprehensive_coverage", "proper_fixtures", "meaningful_names"
+    ],
+    "bad_patterns": [
+      "uses_sleep", "network_calls", "non_deterministic_data", 
+      "generic_assertions", "shared_state", "brittle_selectors"
+    ]
+  },
+  "training_examples": [
+    {
+      "file": "python/good/calc_sum_test.py.ex1",
+      "category": "good",
+      "language": "python",
+      "test_type": "unit",
+      "framework": "pytest",
+      "complexity": "medium",
+      "principles": [
+        "deterministic",
+        "isolated", 
+        "AAA_structure",
+        "clear_assertions",
+        "comprehensive_coverage",
+        "proper_fixtures",
+        "type_validation"
+      ],
+      "violations": [],
+      "tags": [
+        "arithmetic",
+        "edge_cases", 
+        "error_handling",
+        "fixtures",
+        "parametrized_tests"
+      ],
+      "description": "Comprehensive unit tests for calculator functions with proper AAA structure, edge cases, and error handling",
+      "learning_points": [
+        "Clear test method naming with descriptive docstrings",
+        "Proper arrangement-act-assert structure", 
+        "Comprehensive edge case coverage including zero, negative, and large numbers",
+        "Appropriate exception testing with specific error messages",
+        "Good use of pytest fixtures for reusable test data",
+        "Float precision handling for decimal calculations"
+      ]
+    },
+    {
+      "file": "python/bad/flaky_sleep_test.py.ex1", 
+      "category": "bad",
+      "language": "python",
+      "test_type": "unit",
+      "framework": "pytest",
+      "complexity": "simple",
+      "principles": [],
+      "violations": [
+        "uses_sleep",
+        "non_deterministic",
+        "network_calls",
+        "file_operations_unsafe",
+        "global_state_pollution",
+        "unclear_assertions",
+        "exception_handling_too_broad",
+        "test_order_dependency",
+        "time_dependent"
+      ],
+      "tags": [
+        "anti_pattern",
+        "flaky",
+        "unreliable",
+        "slow",
+        "side_effects"
+      ],
+      "description": "Collection of bad test practices that make tests unreliable, slow, and hard to maintain",
+      "learning_points": [
+        "Never use sleep() in tests - makes them slow and unreliable",
+        "Avoid random data without seeds - tests should be reproducible",
+        "Don't make real network calls - use mocks instead",
+        "Clean up files and environment variables after tests",
+        "Each test should be independent and not rely on execution order",
+        "Use specific assertions that verify actual behavior",
+        "Catch only expected exceptions, not all exceptions"
+      ]
+    },
+    {
+      "file": "python/good/api_routes_test.py.ex2",
+      "category": "good", 
+      "language": "python",
+      "test_type": "integration",
+      "framework": "pytest",
+      "complexity": "medium",
+      "principles": [
+        "proper_mocking",
+        "isolation",
+        "deterministic",
+        "clear_setup_teardown"
+      ],
+      "violations": [],
+      "tags": [
+        "api_testing",
+        "mocking",
+        "flask",
+        "http_status_codes"
+      ],
+      "description": "Example of proper API route testing with mocking and fixtures",
+      "planned": true
+    },
+    {
+      "file": "node/good/userService.spec.js.ex1",
+      "category": "good",
+      "language": "node", 
+      "test_type": "unit",
+      "framework": "jest",
+      "complexity": "medium",
+      "principles": [
+        "describe_it_structure",
+        "proper_mocking",
+        "async_testing",
+        "deterministic"
+      ],
+      "violations": [],
+      "tags": [
+        "jest",
+        "async_await",
+        "mocking",
+        "service_layer"
+      ],
+      "description": "Jest best practices for testing Node.js services",
+      "planned": true
+    },
+    {
+      "file": "java/good/UserServiceTest.java.ex1",
+      "category": "good",
+      "language": "java",
+      "test_type": "unit", 
+      "framework": "junit5",
+      "complexity": "medium",
+      "principles": [
+        "junit5_annotations",
+        "mockito_mocking",
+        "assertj_assertions",
+        "test_lifecycle"
+      ],
+      "violations": [],
+      "tags": [
+        "junit5",
+        "mockito",
+        "assertj",
+        "spring"
+      ],
+      "description": "Modern JUnit 5 test with Mockito and AssertJ",
+      "planned": true
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2024-11-02T12:00:00Z",
+    "purpose": "Training data for GenAI test generation",
+    "languages": ["python", "node", "java"],
+    "frameworks": ["pytest", "jest", "junit5"],
+    "categories": ["good", "bad"]
+  },
+  "usage_guidelines": {
+    "few_shot_prompting": {
+      "good_examples_per_prompt": 2,
+      "include_principles": true,
+      "match_language_and_framework": true
+    },
+    "policy_validation": {
+      "check_violations": [
+        "uses_sleep",
+        "network_calls", 
+        "non_deterministic",
+        "global_state_pollution",
+        "unclear_assertions"
+      ],
+      "required_patterns": ["assert", "expect", "should"]
+    },
+    "fine_tuning": {
+      "balance_good_bad_ratio": "3:1",
+      "include_metadata_in_training": false,
+      "format": "instruction_following"
+    }
+  },
+  "quality_metrics": {
+    "deterministic": "Test produces same result every time",
+    "isolated": "Test doesn't depend on external state or other tests",
+    "fast": "Test executes in under 100ms",
+    "clear": "Test intent is obvious from name and structure",
+    "maintainable": "Test is easy to understand and modify"
+  }
+}
