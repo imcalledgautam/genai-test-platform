@@ -297,7 +297,7 @@ def generate_tests_for_symbols(symbols: List[Dict]) -> int:
             source_code = source_path.read_text(encoding='utf-8')
             
             # Create simplified prompt for faster generation
-            symbols_list = ", ".join(s['symbol'] for s in file_symbols)
+            symbols_list = ", ".join(s['name'] for s in file_symbols)
             prompt = f"""Write pytest tests for these functions in {file_path}: {symbols_list}
 
 Source code (first 2000 chars):
