@@ -113,7 +113,7 @@ def extract_python_surface() -> List[Dict[str, Any]]:
                         if not node.name.startswith('_'):
                             surface.append({
                                 "file": rel_path,
-                                "symbol": node.name,
+                                "name": node.name,
                                 "type": "function",
                                 "line": node.lineno
                             })
@@ -123,7 +123,7 @@ def extract_python_surface() -> List[Dict[str, Any]]:
                         if not node.name.startswith('_'):
                             surface.append({
                                 "file": rel_path,
-                                "symbol": node.name,
+                                "name": node.name,
                                 "type": "class",
                                 "line": node.lineno
                             })
